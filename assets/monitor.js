@@ -1064,6 +1064,232 @@
       filtrar();
     },
 
+    // ---------- Indicadores ----------
+    async indicadores() {
+      const [N0, C0] = await Promise.all([datos.noticias(), datos.candidatos().catch(() => [])]);
+      const SEVS = ['alta', 'media', 'baja'];
+      const TEC = /fortinet|forti|palo alto|pan-os|globalprotect|cisco|ivanti|citrix|netscaler|\bf5\b|big-ip|vmware|esx|microsoft|windows|exchange|office|beyondtrust|sonicwall|juniper|connectwise/;
+      const hoy = hoyISO();
+      const menos = (iso, d) => new Date(new Date(iso + 'T12:00:00Z').getTime() - d * 864e5).toISOString().slice(0, 10);
+      const dias = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(String(a).slice(0, 10) + 'T12:00:00Z')) / 864e5);
+      const pct = (v, t) => t ? Math.round(v / t * 100) : 0;
+      // Barras horizontales con el mismo estilo que el desglose por categoría del Panorama
+      const barras = (items, total, color, vacio) => {
+        if (!items.length) return `<div class="mx-empty">${vacio || 'Sin datos en el período.'}</div>`;
+        const mx = Math.max(1, ...items.map(x => x[1]));
+        return items.map(([k, v, extra]) => `<div class="mx-catrow"><div class="l"><span title="${esc(k)}">${esc(k)}</span>
+          <span class="mx-mono">${v}${total ? ` · ${pct(v, total)}%` : ''}${extra ? ` · ${extra}` : ''}</span></div>
+          <div class="mx-track"><div class="mx-fill" style="width:${(v / mx * 100).toFixed(1)}%;background:${color}"></div></div></div>`).join('');
+      };
+      // Matriz con intensidad proporcional al valor
+      const matriz = (filas, cols, valor, color, total) => {
+        const mx = Math.max(1, ...filas.flatMap(f => cols.map(c => valor(f[0], c[0]))));
+        return `<thead><tr><th></th>${cols.map(c => `<th>${esc(c[1])}</th>`).join('')}${total ? '<th>Total</th>' : ''}</tr></thead><tbody>`
+          + filas.map(([fk, fl]) => `<tr><th>${esc(fl)}</th>${cols.map(([ck, cl]) => { const v = valor(fk, ck), col = typeof color === 'function' ? color(ck) : color;
+            return `<td style="--c:${col};--a:${v ? (.12 + .78 * v / mx).toFixed(2) : 0}" title="${esc(fl)} · ${esc(cl)}: ${v}"><span>${v}</span></td>`; }).join('')}
+            ${total ? `<td class="tot">${cols.reduce((s, c) => s + valor(fk, c[0]), 0)}</td>` : ''}</tr>`).join('') + '</tbody>';
+      };
+
+      const pintar = per => {
+        const desde = per ? menos(hoy, per - 1) : '0000';
+        const N = N0.filter(x => x.fecha >= desde);
+        const C = C0.filter(c => c.fecha >= desde);
+        const Ant = per ? N0.filter(x => x.fecha >= menos(hoy, 2 * per - 1) && x.fecha < desde) : [];
+        const ev = C.filter(c => c.naturaleza === 'Evento' && c.decision !== 'rechazado');
+        const pend = C0.filter(c => c.decision === 'pendiente');
+        const viejos = pend.filter(c => dias(c.agregado || c.fecha, hoy) > 7).length;
+        const etiq = per ? `Últimos ${per} días` : 'Todo el historial';
+
+        // KPIs
+        const alta = N.filter(x => x.severidad === 'alta').length, nac = N.filter(x => x.ambito === 'nacional').length;
+        const tec = N.filter(x => /vulnerabilidad explotada/i.test(x.tipo) && TEC.test(low(x.titulo + ' ' + x.entidad))).length;
+        const K = [
+          { t: 'Hechos relevados', v: N.length, s: `${nac} nacionales · ${etiq.toLowerCase()}`, i: 'activity', d: per && Ant.length ? delta(N.length, Ant.length).replace(/ sem\./, ' vs. período ant.') : '' },
+          { t: 'Severidad alta', v: alta, s: `${pct(alta, N.length)}% del total`, i: 'alert', ib: 'rojo', vc: 'var(--alta)' },
+          { t: 'Fallas explotadas en tecnología bancaria', v: tec, s: 'Cisco, Fortinet, Ivanti, Palo Alto, VMware, Microsoft…', i: 'shield', ib: 'azul' },
+          { t: 'Pendientes de revisión', v: pend.length, s: `${viejos} con más de 7 días · revisión media: ${tiempoMedio(C0)}`, i: 'hour', vc: viejos ? 'var(--media)' : '' }];
+        $('in-kpis').innerHTML = K.map(k => `<div class="mx-kpi"><div class="mx-kpi-h"><span class="mx-eyebrow">${k.t}</span><span class="mx-kpi-ib ${k.ib || ''}">${ico(k.i, 'width:17px;height:17px')}</span></div>
+          <div class="mx-kpi-v"><span class="n"><span class="mx-stat" ${k.vc ? `style="color:${k.vc}"` : ''}>${k.v}</span></span>${k.d || ''}</div>
+          <div class="mx-small">${esc(k.s)}</div></div>`).join('');
+
+        // Hechos por semana (apilado por severidad), hasta 12 semanas
+        const lunes = f => { const d = new Date(f + 'T12:00:00Z'); return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 864e5).toISOString().slice(0, 10); };
+        const S = {}; N.forEach(x => { const w = lunes(x.fecha); (S[w] = S[w] || { alta: 0, media: 0, baja: 0 })[x.severidad] = (S[w][x.severidad] || 0) + 1; });
+        const W = Object.keys(S).sort().slice(-12), tw = w => SEVS.reduce((s, k) => s + (S[w][k] || 0), 0);
+        $('in-sem-t').textContent = W.length ? `${W.length} semanas` : '—';
+        if (!W.length) $('in-sem').innerHTML = '<div class="mx-empty">Sin hechos en el período.</div>';
+        else {
+          const max = Math.max(4, ...W.map(tw)), paso = max <= 8 ? 2 : max <= 20 ? 5 : max <= 50 ? 10 : 20, tope = Math.ceil(max / paso) * paso;
+          const Wd = 460, H = 200, ml = 24, mb = 22, mt = 16, cw = (Wd - ml) / W.length, bw = Math.min(28, cw * .62), y = v => mt + (H - mt - mb) * (1 - v / tope);
+          let svg = `<svg viewBox="0 0 ${Wd} ${H}">`;
+          for (let v = paso; v <= tope; v += paso) svg += `<line class="grid" x1="${ml}" x2="${Wd}" y1="${y(v)}" y2="${y(v)}"/><text class="eje" x="${ml - 5}" y="${y(v) + 3}" text-anchor="end">${v}</text>`;
+          svg += `<line class="base" x1="${ml}" x2="${Wd}" y1="${y(0)}" y2="${y(0)}"/>`;
+          W.forEach((w, i) => {
+            const cx = ml + i * cw + cw / 2; let acc = 0;
+            svg += `<g data-i="${i}"><rect class="hit" x="${ml + i * cw}" y="0" width="${cw}" height="${H - mb}"/>`;
+            SEVS.forEach(k => { const v = S[w][k] || 0; if (!v) return; const y1 = y(acc + v), y0 = y(acc); acc += v;
+              svg += `<rect x="${cx - bw / 2}" y="${y1}" width="${bw}" height="${Math.max(0, y0 - y1 - 1)}" rx="2" style="fill:var(--${k})"/>`; });
+            svg += `<text class="lbl" x="${cx}" y="${y(acc) - 4}" text-anchor="middle">${acc}</text></g>`
+              + `<text class="eje" x="${cx}" y="${H - 6}" text-anchor="middle">${fCorta(w)}</text>`;
+          });
+          $('in-sem').innerHTML = svg + '</svg>';
+          $('in-sem').setAttribute('aria-label', 'Hechos por semana: ' + W.map(w => `${fCorta(w)} ${tw(w)}`).join(', '));
+          $('in-sem').querySelectorAll('g[data-i]').forEach(g => {
+            const w = W[+g.dataset.i];
+            g.addEventListener('mousemove', e => verTip(e, `<b>Semana del ${fCorta(w)}</b>${lunes(hoy) === w ? ' (en curso)' : ''}<br>${SEVS.map(k => `${k[0].toUpperCase() + k.slice(1)}: ${S[w][k] || 0}`).join(' · ')}`));
+            g.addEventListener('mouseleave', ocultarTip);
+          });
+        }
+        $('in-sem-l').innerHTML = SEVS.map(k => { const c = N.filter(x => x.severidad === k).length;
+          return `<div><div class="k"><i style="background:var(--${k})"></i>${k[0].toUpperCase() + k.slice(1)}</div><div class="mx-mono">${c} (${pct(c, N.length)}%)</div></div>`; }).join('');
+
+        // Categoría × severidad
+        $('in-heat').innerHTML = matriz(Object.entries(CAT), SEVS.map(s => [s, s[0].toUpperCase() + s.slice(1)]),
+          (c, s) => N.filter(x => x.categoria === c && x.severidad === s).length, s => `var(--${s})`, true);
+
+        // Tipos más frecuentes
+        const tp = {}; N.forEach(x => { if (x.tipo) tp[x.tipo] = (tp[x.tipo] || 0) + 1; });
+        $('in-tipos-t').textContent = etiq;
+        $('in-tipos').innerHTML = barras(Object.entries(tp).sort((a, b) => b[1] - a[1]).slice(0, 8), N.length, 'var(--primary)');
+
+        // Fallos, condenas y sanciones (candidatos argentinos)
+        const jud = C.filter(c => /fallo|judicial|sanci|condena|multa/i.test(c.subtipo + ' ' + c.titulo)).sort((a, b) => b.fecha.localeCompare(a.fecha));
+        $('in-jud-t').textContent = plural(jud.length, 'caso');
+        $('in-jud').innerHTML = jud.length ? jud.slice(0, 8).map(c => `<div class="it"><span class="mx-mono">${esc(fCorta(c.fecha))}</span>
+          <div><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.titulo)}</a><span class="mx-small">${esc(c.subtipo || '—')} · ${esc(c.entidad || '—')}${c.valorizado !== '' && c.valorizado != null ? ` · ${esc(c.moneda || '$')} ${Number(c.valorizado).toLocaleString('es-AR')}` : ''}</span></div></div>`).join('')
+          : '<div class="mx-empty">Sin fallos ni sanciones en el período.</div>';
+
+        // Tipos A 4793 (siempre los 7)
+        const t7 = TIPOS.map((t, i) => [TIPO_CORTO[i], ev.filter(c => c.tipoEvento === t).length]);
+        $('in-t4793-t').textContent = `${plural(ev.length, 'evento')} · ${ev.filter(c => c.decision === 'aprobado').length} aprobados`;
+        $('in-t4793').innerHTML = barras(t7, ev.length, 'var(--ok)');
+
+        // Origen × factor
+        $('in-of').innerHTML = matriz([['Interno', 'Interno'], ['Externo', 'Externo']],
+          [['Personas', 'Personas'], ['Procesos', 'Procesos'], ['Sistemas', 'Sistemas'], ['Eventos externos', 'Ev. externos']],
+          (o, f) => ev.filter(c => c.origen === o && c.factor === f).length, 'var(--ok)', false);
+
+        // Canal (un hecho puede tener varios)
+        const cn = {};
+        ev.forEach(c => String(c.canal || '').split('/').map(p => p.replace(/\(.*?\)/g, '').trim()).filter(Boolean).forEach(p => {
+          p = /^tel[eé]fon/i.test(p) ? 'Telefonía / SIM' : p[0].toUpperCase() + p.slice(1); cn[p] = (cn[p] || 0) + 1; }));
+        $('in-canal').innerHTML = barras(Object.entries(cn).sort((a, b) => b[1] - a[1]).slice(0, 8), ev.length, 'var(--ok)', 'Sin eventos con canal identificado.');
+
+        // Flujo de revisión
+        const ap = C.filter(c => c.decision === 'aprobado'), re = C.filter(c => c.decision === 'rechazado'), dec = ap.concat(re);
+        const corr = dec.filter(modificado).length;
+        $('in-rev-t').textContent = etiq;
+        $('in-rev').innerHTML = barras([['Sugeridos (IA y carga manual)', C.length], ['Aprobados', ap.length], ['Rechazados', re.length],
+          ['Pendientes', C.filter(c => c.decision === 'pendiente').length]], C.length, 'var(--navy-2)')
+          + `<p class="mx-small" style="margin-top:10px">Clasificación de la IA corregida por un analista: <b>${dec.length ? `${corr} de ${dec.length} (${pct(corr, dec.length)}%)` : 'sin decisiones todavía'}</b> · Tiempo medio de revisión: <b>${tiempoMedio(C)}</b></p>`;
+        const E4 = [['0 a 2 días', 0, 2], ['3 a 7 días', 3, 7], ['8 a 14 días', 8, 14], ['Más de 14 días', 15, 1e9]]
+          .map(([k, a, b]) => [k, pend.filter(c => { const d = dias(c.agregado || c.fecha, hoy); return d >= a && d <= b; }).length]);
+        $('in-edad').innerHTML = barras(E4, pend.length, 'var(--media)', 'No hay pendientes.');
+      };
+
+      const chips = $('in-per');
+      chips.addEventListener('click', ev => {
+        const b = ev.target.closest('button[data-d]'); if (!b) return;
+        chips.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+        grabarLS('mx-in-per', b.dataset.d); pintar(+b.dataset.d);
+      });
+      const ini = leerLS('mx-in-per') || '30';
+      chips.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.d === ini));
+      pintar(+ini);
+    },
+
+    // ---------- Normativa ----------
+    async normativa() {
+      const B = window.MX_NORMATIVA || { normas: [], comunicados: [], kri: [] };
+      const [N0, C0] = await Promise.all([datos.noticias().catch(() => []), datos.candidatos().catch(() => [])]);
+      const TEMAS = { operacional: 'Riesgo operacional', tecnologia: 'Tecnología y ciberseguridad', terceros: 'Terceras partes', fraude: 'Fraude', usuarios: 'Protección de usuarios' };
+      const TCOL = { operacional: 'info', tecnologia: 'neutral', terceros: 'media', fraude: 'alta', usuarios: 'ok' };
+      const hoy = hoyISO(), d30 = new Date(new Date(hoy + 'T12:00:00Z').getTime() - 29 * 864e5).toISOString().slice(0, 10);
+      const N = N0.filter(x => x.fecha >= d30), C = C0.filter(c => c.fecha >= d30 && c.decision !== 'rechazado');
+      const ev = C.filter(c => c.naturaleza === 'Evento');
+      const fecha = n => n.fechaTxt || fLarga(n.fecha);
+      $('nm-sub').textContent = `${plural(B.normas.length, 'norma')} y ${plural(B.comunicados.length, 'comunicado')} · biblioteca actualizada al ${fLarga(B.actualizado)}`;
+
+      // Valores actuales de los KRI que el monitor ya puede calcular
+      const TEC = /fortinet|forti|palo alto|pan-os|globalprotect|cisco|ivanti|citrix|netscaler|\bf5\b|big-ip|vmware|esx|microsoft|windows|exchange|office|beyondtrust|sonicwall|juniper|connectwise/;
+      const pesos = v => '$ ' + Math.round(v).toLocaleString('es-AR');
+      const canales = {}; ev.filter(c => /fraude/i.test(c.tipoEvento)).forEach(c => String(c.canal || '').split('/').map(p => p.replace(/\(.*?\)/g, '').trim()).filter(Boolean)
+        .forEach(p => { p = /^tel[eé]fon/i.test(p) ? 'Telefonía / SIM' : p; canales[p] = (canales[p] || 0) + 1; }));
+      const topCanal = Object.entries(canales).sort((a, b) => b[1] - a[1])[0];
+      const valARS = ev.filter(c => c.decision === 'aprobado' && c.valorizado !== '' && c.valorizado != null && (!c.moneda || /ars|\$/i.test(c.moneda)));
+      const VAL = {
+        eventos: () => { const t = {}; ev.forEach(c => { if (c.tipoEvento && c.tipoEvento !== '—') t[c.tipoEvento] = (t[c.tipoEvento] || 0) + 1; });
+          const top = Object.entries(t).sort((a, b) => b[1] - a[1])[0]; return [ev.length, top ? `${top[0]}: ${top[1]}` : '']; },
+        perdida: () => [valARS.length ? pesos(valARS.reduce((s, c) => s + Number(c.valorizado), 0)) : '—', valARS.length ? `${plural(valARS.length, 'evento aprobado')} con monto en pesos` : 'Sin eventos aprobados con monto'],
+        fraude: () => [ev.filter(c => /fraude/i.test(c.tipoEvento)).length, topCanal ? `Canal principal: ${topCanal[0]}` : ''],
+        judicial: () => [C.filter(c => /fallo|judicial|sanci|condena|multa/i.test(c.subtipo + ' ' + c.titulo)).length, 'fallos, condenas o multas'],
+        kev: () => [N.filter(x => /vulnerabilidad explotada/i.test(x.tipo) && TEC.test(low(x.titulo + ' ' + x.entidad))).length, 'en productos de uso bancario'],
+        terceros: () => [N.filter(x => /cadena de suministro|proveedor|tercerizad/i.test(x.tipo + ' ' + x.titulo)).length, 'hechos que involucran a proveedores']
+      };
+
+      let tema = new URLSearchParams(location.search).get('tema') || '', q = '';
+      const pintar = () => {
+        const txt = n => sinTilde([n.numero, n.titulo, n.resumen, n.texto, n.destinatarios, (n.claves || []).join(' '), n.temas.map(t => TEMAS[t]).join(' ')].join(' '));
+        $('nm-temas').innerHTML = `<button type="button" class="mx-chipbtn ${tema ? '' : 'on'}" data-t="">Todas · ${B.normas.length}</button>`
+          + Object.entries(TEMAS).filter(([k]) => B.normas.some(n => n.temas.includes(k)))
+            .map(([k, v]) => `<button type="button" class="mx-chipbtn ${tema === k ? 'on' : ''}" data-t="${k}">${v} · ${B.normas.filter(n => n.temas.includes(k)).length}</button>`).join('');
+
+        // KRI: una tarjeta por área con sus indicadores
+        const K = B.kri.filter(k => !tema || k.tema === tema);
+        const areas = Object.keys(TEMAS).filter(t => K.some(k => k.tema === t));
+        $('nm-n-kri').textContent = K.length;
+        $('nm-kri').innerHTML = areas.length ? areas.map(t => `<section class="mx-card mx-nm-area"><div class="mx-card-h"><span class="mx-badge ${TCOL[t] || 'neutral'}">${esc(TEMAS[t])}</span></div>`
+          + K.filter(k => k.tema === t).map(k => { const v = k.monitor && VAL[k.monitor] ? VAL[k.monitor]() : null;
+            return `<div class="mx-nm-k"><div class="v">${v ? `<b>${esc(v[0])}</b>` : '<span class="na">—</span>'}</div>
+              <div style="min-width:0"><div class="t">${esc(k.indicador)}</div><div class="mx-small">${esc(k.formula)}</div>
+              <div class="f"><span class="mx-mono">${esc(k.norma)}</span> · ${v ? esc(v[1] || k.fuente) : 'Requiere datos internos · ' + esc(k.fuente)}</div></div></div>`; }).join('') + '</section>').join('')
+          : '<div class="mx-card"><div class="mx-empty">Sin indicadores para este tema.</div></div>';
+
+        // Normas: filas compactas que se expanden
+        const L = B.normas.filter(n => (!tema || n.temas.includes(tema)) && (!q || txt(n).includes(q))).sort((a, b) => b.fecha.localeCompare(a.fecha));
+        $('nm-n-bib').textContent = L.length;
+        $('nm-lista').innerHTML = L.length ? L.map(n => `<details class="mx-nm-row" data-id="${esc(n.id)}">
+            <summary><span class="num mx-mono">${esc(n.numero)}</span>
+              <span class="tx"><b>${esc(n.titulo)}</b><span class="mx-small">${esc(fecha(n))} · ${n.temas.map(t => esc(TEMAS[t] || t)).join(' · ')}</span></span>
+              <span class="est mx-small">${esc(n.estado)}</span><span class="car" aria-hidden="true">›</span></summary>
+            <div class="det">
+              <p class="mx-body" style="margin:0 0 8px">${esc(n.resumen)}</p>
+              <ul>${(n.claves || []).map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+              <div class="meta3"><div class="mx-tile"><span>Alcance</span><b>${esc(n.destinatarios)}</b></div><div class="mx-tile"><span>Texto ordenado</span><b>${esc(n.texto)}</b></div>
+                <div class="mx-tile"><span>Plazos</span><b>${esc(n.plazos)}</b></div><div class="mx-tile"><span>Estado</span><b>${esc(n.estado)}</b></div></div>
+              <div class="mx-nm-links"><span class="mx-eyebrow">Para profundizar</span>
+                ${(n.enlaces && n.enlaces.length ? n.enlaces : [{ t: 'Ver texto', url: n.url }]).map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${ico(/pdf|texto ordenado/i.test(l.t) ? 'file' : 'ext', 'width:15px;height:15px')}<span>${esc(l.t)}</span></a>`).join('')}</div>
+            </div></details>`).join('') : '<div class="mx-empty">No hay normas que coincidan con la búsqueda.</div>';
+
+        // Comunicados
+        const Cm = B.comunicados.filter(c => !tema || c.tema === tema).sort((a, b) => b.fecha.localeCompare(a.fecha));
+        $('nm-n-com').textContent = Cm.length;
+        $('nm-com').innerHTML = Cm.length ? Cm.map(c => `<div class="it"><span class="mx-mono">${esc(fLarga(c.fecha))}</span><div><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.titulo)} ${ico('ext', 'width:13px;height:13px;vertical-align:-2px')}</a>
+          <span class="mx-small">${esc(c.resumen)}</span><span class="mx-small" style="color:var(--mute)">Fuente: ${esc(c.fuente || '—')}</span>
+          ${(c.enlaces || []).map(l => `<a class="mx-nm-sub" href="${esc(l.url)}" target="_blank" rel="noopener">→ ${esc(l.t)}</a>`).join('')}</div></div>`).join('') : '<div class="mx-empty">Sin comunicados para este tema.</div>';
+      };
+
+      // Uso de cada norma en los candidatos del monitor (todo el historial)
+      const NUM = [['A 4793', /4793/], ['A 8471', /8471/], ['A 7724', /7724/], ['Ley 24.240', /24\.?240/]];
+      const Cn = C0.filter(c => c.decision !== 'rechazado'), mxu = Math.max(1, ...NUM.map(([, r]) => Cn.filter(c => r.test(c.normativa)).length));
+      $('nm-uso').innerHTML = NUM.map(([k, r]) => { const v = Cn.filter(c => r.test(c.normativa)).length;
+        return `<div class="mx-catrow"><div class="l"><span>${k}</span><span class="mx-mono">${plural(v, 'hecho')}</span></div><div class="mx-track"><div class="mx-fill" style="width:${(v / mxu * 100).toFixed(1)}%"></div></div></div>`; }).join('');
+
+      $('nm-temas').addEventListener('click', e => { const b = e.target.closest('button[data-t]'); if (!b) return; tema = b.dataset.t; pintar(); });
+      $('nm-q').addEventListener('input', e => { q = sinTilde(e.target.value); pintar(); });
+      // Solo una norma abierta a la vez
+      $('nm-lista').addEventListener('toggle', e => { if (e.target.open) $('nm-lista').querySelectorAll('details[open]').forEach(d => { if (d !== e.target) d.open = false; }); }, true);
+      // Pestañas internas (Biblioteca · KRI · Comunicados), recordadas en la dirección (#kri)
+      const verTab = t => {
+        if (!['biblioteca', 'kri', 'comunicados'].includes(t)) t = 'biblioteca';
+        document.querySelectorAll('#nm-tabs [data-tab]').forEach(b => { const on = b.dataset.tab === t; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+        document.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== t; });
+      };
+      $('nm-tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (!b) return; history.replaceState(null, '', '#' + b.dataset.tab); verTab(b.dataset.tab); });
+      verTab(location.hash.slice(1));
+      pintar();
+    },
+
     async metodologia() { /* página estática */ }
   };
 
