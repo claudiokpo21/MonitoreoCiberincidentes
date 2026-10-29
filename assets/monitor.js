@@ -1,5 +1,5 @@
 /* =====================================================================
-   Monitor de Ciberseguridad · lógica del sitio
+   Monitor de Riesgo · lógica del sitio
    Fuente de datos: window.MX_DATOS (archivo datos/datos.js) o Supabase,
    según config.js. Todas las páginas usan este mismo archivo.
    ===================================================================== */
@@ -122,7 +122,7 @@
     }));
     const wb = X.utils.book_new();
     X.utils.book_append_sheet(wb, ws, hoja);
-    const wi = X.utils.aoa_to_sheet([['Monitor de Ciberseguridad'], [], ...info, [], ['Elaborado con IA a partir de fuentes públicas. Contenido orientativo; no constituye una evaluación oficial de ninguna entidad.']]);
+    const wi = X.utils.aoa_to_sheet([['Monitor de Riesgo'], [], ...info, [], ['Elaborado con IA a partir de fuentes públicas. Contenido orientativo; no constituye una evaluación oficial de ninguna entidad.']]);
     wi['!cols'] = [{ wch: 28 }, { wch: 70 }];
     X.utils.book_append_sheet(wb, wi, 'Información');
     X.writeFile(wb, `${nombre}-${hoyISO()}.xlsx`, { compression: true });
@@ -237,7 +237,8 @@
     impacto: r.impacto || '—', decision: low(r.decision) || 'pendiente', comentario: r.comentario || '', revisadoPor: r.revisadoPor || r.revisadopor || '',
     revisadoEn: r.revisadoEn || r.revisadoen || '',
     valorizadoManual: r.valorizado !== undefined && r.valorizado !== null && r.valorizado !== '',
-    valorizado: r.valorizado !== undefined && r.valorizado !== null && r.valorizado !== '' ? Number(r.valorizado) : '', moneda: r.moneda || '' });
+    valorizado: r.valorizado !== undefined && r.valorizado !== null && r.valorizado !== '' ? Number(r.valorizado) : '', moneda: r.moneda || '',
+    sugeridoPor: r.sugeridoPor || r.sugeridopor || '' });
 
   // Clasificación sugerida por la IA (se conserva aunque el analista la corrija)
   const CAMPOS_CLAS = ['tipoEvento', 'origen', 'factor', 'canal', 'impacto', 'normativa'];
@@ -318,6 +319,7 @@
     borrarSesion(); location.reload();
   }
   const OVERLAY = 'mx-decisiones';
+  const leerJSON = (k, d) => { try { return JSON.parse(leerLS(k) || 'null') || d; } catch (e) { return d; } };
   const leerOverlay = () => { try { return JSON.parse(leerLS(OVERLAY) || '{}'); } catch (e) { return {}; } };
   const memo = {};
   const datos = {
@@ -326,7 +328,7 @@
         .then(a => a.map(normN).map(conMonto).filter(x => x.fecha).sort((a, b) => b.fecha.localeCompare(a.fecha) || (RK[a.severidad] ?? 3) - (RK[b.severidad] ?? 3))));
     },
     candidatos() {
-      return memo.c || (memo.c = (usaSupabase ? sbLeer(SB.tablas?.candidatos || 'candidatos') : Promise.resolve((window.MX_DATOS || {}).candidatos || []))
+      return memo.c || (memo.c = (usaSupabase ? sbLeer(SB.tablas?.candidatos || 'candidatos') : Promise.resolve(((window.MX_DATOS || {}).candidatos || []).concat(leerJSON('mx-manuales', []))))
         .then(a => { const ov = usaSupabase ? {} : leerOverlay(); return a.map(r => { const c = normC(Object.assign({}, r, ov[r.id || r.codigo] || {})); c.ia = iaDe(r); c.iaFija = !!(r.sugerenciaIA || r.sugerenciaia); return c; }).map(c => { const v = montoDe(c.titulo, 'nacional', 'Argentina') || montoDe(c.resumen, 'nacional', 'Argentina'); c.montoTexto = v ? v.texto : ''; if (!c.valorizadoManual && v) { c.valorizado = v.monto; c.moneda = v.moneda; } return c; }); })
         .then(a => a.sort((a, b) => b.fecha.localeCompare(a.fecha) || (a.naturaleza !== 'Evento') - (b.naturaleza !== 'Evento'))));
     },
@@ -346,6 +348,35 @@
       } else {
         const ov = leerOverlay(); ov[id] = Object.assign(ov[id] || {}, cambios); grabarLS(OVERLAY, JSON.stringify(ov));
       }
+    },
+    // Carga manual de un evento por un analista (queda pendiente de revisión)
+    async crearCandidato(fila) {
+      if (usaSupabase) {
+        const filas = await sbFetch(SB.tablas?.candidatos || 'monitor_candidatos', { method: 'POST',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(fila) });
+        if (!filas || !filas.length) throw new Error('No tenés permiso para cargar eventos (se requiere rol de analista).');
+        return filas[0];
+      }
+      const f = Object.assign({}, fila, { agregado: new Date().toISOString(), decision: 'pendiente', sugeridoPor: 'Manual · ' + (analista() || 'analista') });
+      const l = leerJSON('mx-manuales', []); l.push(f); grabarLS('mx-manuales', JSON.stringify(l)); return f;
+    },
+    // Fuentes a monitorear
+    async fuentes() {
+      if (usaSupabase) return sbFetch(`${SB.tablas?.fuentes || 'monitor_fuentes'}?select=*&order=agregado.desc`);
+      return leerJSON('mx-fuentes', []);
+    },
+    async agregarFuente(url, nombre) {
+      if (usaSupabase) {
+        const filas = await sbFetch(SB.tablas?.fuentes || 'monitor_fuentes', { method: 'POST',
+          headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify({ url, nombre }) });
+        return filas[0];
+      }
+      const l = leerJSON('mx-fuentes', []), f = { id: Date.now(), url, nombre, agregadoPor: analista(), agregado: new Date().toISOString() };
+      l.unshift(f); grabarLS('mx-fuentes', JSON.stringify(l)); return f;
+    },
+    async borrarFuente(id) {
+      if (usaSupabase) { await sbFetch(`${SB.tablas?.fuentes || 'monitor_fuentes'}?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }); return; }
+      grabarLS('mx-fuentes', JSON.stringify(leerJSON('mx-fuentes', []).filter(f => String(f.id) !== String(id))));
     }
   };
 
@@ -633,7 +664,7 @@
       if (usaSupabase && !esAnalista()) $('mx-page').querySelector('.mx-wrap').insertAdjacentHTML('afterbegin',
         `<div class="mx-nota">${ico('info')}<div><b>Solo lectura.</b> Tu usuario tiene rol de lector: podés ver y exportar los candidatos, pero solo los analistas pueden clasificarlos.</div></div>`);
       if (!usaSupabase) $('mx-page').querySelector('.mx-wrap').insertAdjacentHTML('afterbegin',
-        `<div class="mx-nota">${ico('info')}<div><b>Modo local.</b> Las decisiones se guardan en este navegador. Para compartirlas, exportalas desde el Registro A 4793 o conectá la base de datos en <span class="mx-mono">config.js</span>.</div></div>`);
+        `<div class="mx-nota">${ico('info')}<div><b>Modo local.</b> Las decisiones se guardan en este navegador. Para compartirlas, exportalas desde el Registro de eventos o conectá la base de datos en <span class="mx-mono">config.js</span>.</div></div>`);
       let estado = 'pendiente', selId = null;
       const quien = () => analista();
       const actualizarCab = () => {
@@ -687,7 +718,7 @@
               </div>
             </div>
             <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin:-4px 0 12px">
-              <span class="mx-mono" style="color:var(--mute)">Fuente: ${esc(c.fuente)} · Sugerido ${esc(fHora(c.agregado))}</span>
+              <span class="mx-mono" style="color:var(--mute)">Fuente: ${esc(c.fuente || '—')} · ${/^manual/i.test(c.sugeridoPor) ? `Cargado por ${esc(c.sugeridoPor.replace(/^manual\s*·\s*/i, '') || 'analista')}` : 'Sugerido'} ${esc(fHora(c.agregado))}</span>
               ${c.url ? `<a class="mx-btn sm" href="${esc(c.url)}" target="_blank" rel="noopener">Abrir nota original ${ico('ext', 'width:14px;height:14px')}</a>` : ''}</div>
             <h2 class="mx-h1">${esc(c.titulo)}</h2>
             <p class="mx-body" style="margin-top:8px">Entidad: <b style="color:var(--ink)">${esc(c.entidad || '—')}</b>${c.subtipo ? ` · <span class="mx-mono">${esc(c.subtipo)}</span>` : ''}</p>
@@ -702,7 +733,7 @@
           <section class="mx-card" style="box-shadow:var(--sh-2)">
             <div class="mx-card-h" style="margin-bottom:18px">
               <div class="tit">${ico('scale', 'width:22px;height:22px')}<div><h3 class="mx-h2">Clasificación del evento</h3>
-                <div class="mx-eyebrow" style="color:var(--mute)">Com. "A" 4793 · sugerida por IA, confirmala o corregila</div></div></div>
+                <div class="mx-eyebrow" style="color:var(--mute)">Com. "A" 4793 · ${/^manual/i.test(c.sugeridoPor) ? 'cargada por un analista' : 'sugerida por IA'}, confirmala o corregila</div></div></div>
               <span class="mx-badge info mx-mono">Revisión del analista</span>
             </div>
             <div class="mx-form">
@@ -791,6 +822,112 @@
           document.querySelectorAll('#rv-detalle [data-dec]').forEach(x => { x.disabled = false; });
         }
       });
+      // ---------- Carga manual de un evento ----------
+      const slug = t => sinTilde(t).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').split('-').slice(0, 6).join('-') || 'evento';
+      const normUrl = u => { u = String(u || '').trim(); return !u ? '' : /^https?:\/\//i.test(u) ? u : 'https://' + u.replace(/^\/+/, ''); };
+      const urlValida = u => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) && x.hostname.includes('.'); } catch (e) { return false; } };
+      function abrirCarga() {
+        cerrarFicha();
+        const m = document.createElement('div');
+        m.className = 'mx mx-modal'; m.id = 'mx-modal'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); m.setAttribute('aria-labelledby', 'mc-tit');
+        const sel = (id, lista, v) => `<select class="mx-select" id="${id}">${opts(lista, v)}</select>`;
+        m.innerHTML = `<div class="mx-dialog">
+          <div class="mx-dialog-h"><div style="display:flex;gap:8px;align-items:center">${ico('file', 'color:var(--primary)')}<b class="mx-h3" id="mc-tit">Cargar evento manualmente</b></div>
+            <button type="button" class="mx-x" data-cerrar aria-label="Cerrar">${ico('x')}</button></div>
+          <form class="mx-dialog-b" id="mc-form" novalidate>
+            <p class="mx-small" style="margin:0">El hecho entra a la cola como <b>pendiente</b>, firmado con tu nombre. Después se revisa y aprueba como cualquier candidato.</p>
+            <div class="mx-form">
+              <div><label class="mx-label" for="mc-fecha">Fecha del hecho <em>*</em></label><input class="mx-input" id="mc-fecha" type="date" max="${hoyISO()}" value="${hoyISO()}" required></div>
+              <div><label class="mx-label" for="mc-nat">Naturaleza</label><select class="mx-select" id="mc-nat"><option>Evento</option><option>Noticia</option></select></div>
+              <div style="grid-column:1/-1"><label class="mx-label" for="mc-titulo">Título <em>*</em></label><input class="mx-input" id="mc-titulo" maxlength="240" required placeholder="Qué pasó, en una línea"></div>
+              <div style="grid-column:1/-1"><label class="mx-label" for="mc-res">Resumen</label><textarea class="mx-textarea" id="mc-res" placeholder="Hechos verificados: quién, qué, cuándo, montos…"></textarea></div>
+              <div><label class="mx-label" for="mc-ent">Entidad</label><input class="mx-input" id="mc-ent" placeholder="Banco, billetera, organismo…"></div>
+              <div><label class="mx-label" for="mc-sub">Subtipo</label><input class="mx-input" id="mc-sub" list="mc-subs" placeholder="Fraude consumado a cliente">
+                <datalist id="mc-subs">${['Fraude consumado a cliente', 'Pérdida por fallo judicial', 'Sanción administrativa confirmada', 'Caída de servicio', 'Filtración de datos', 'Alerta del regulador', 'Alerta de modalidad', 'Normativa'].map(o => `<option value="${o}">`).join('')}</datalist></div>
+              <div><label class="mx-label" for="mc-fuente">Fuente</label><input class="mx-input" id="mc-fuente" list="mc-fuentes" placeholder="Nombre del medio o de la fuente">
+                <datalist id="mc-fuentes">${FU.map(f => `<option value="${esc(f.nombre || f.url)}">`).join('')}</datalist></div>
+              <div><label class="mx-label" for="mc-url">Dirección (URL)</label><input class="mx-input" id="mc-url" type="text" inputmode="url" placeholder="www.ejemplo.com.ar/nota"></div>
+              <div><label class="mx-label" for="mc-tipo">Tipo de evento</label>${sel('mc-tipo', TIPOS, '—')}</div>
+              <div><label class="mx-label" for="mc-orig">Origen</label>${sel('mc-orig', ['Externo', 'Interno'], '—')}</div>
+              <div><label class="mx-label" for="mc-fact">Factor</label>${sel('mc-fact', ['Personas', 'Procesos', 'Sistemas', 'Eventos externos'], '—')}</div>
+              <div><label class="mx-label" for="mc-canal">Canal</label><input class="mx-input" id="mc-canal" list="c-canales-m">
+                <datalist id="c-canales-m">${['Homebanking', 'Billetera virtual', 'Tarjeta', 'Cajero', 'Transferencias', 'Pagos con QR', 'App móvil', 'Telefonía (SIM)'].map(o => `<option value="${o}">`).join('')}</datalist></div>
+              <div><label class="mx-label" for="mc-imp">Impacto</label>${sel('mc-imp', ['Alta', 'Media', 'Baja'], '—')}</div>
+              <div><label class="mx-label" for="mc-norm">Normativa</label><input class="mx-input mx-mono" id="mc-norm" placeholder="A 4793 · A 8471"></div>
+              <div><label class="mx-label" for="mc-val">Valorizado (monto)</label><input class="mx-input mx-mono" id="mc-val" inputmode="decimal" placeholder="Ej.: 1500000"></div>
+              <div><label class="mx-label" for="mc-mon">Moneda</label><select class="mx-select" id="mc-mon">${['ARS', 'USD', 'EUR', 'Otra'].map(o => `<option>${o}</option>`).join('')}</select></div>
+            </div>
+            <p class="mx-msg" id="mc-msg" aria-live="polite"></p>
+            <div style="display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--div);padding-top:14px">
+              <button type="button" class="mx-btn" data-cerrar>Cancelar</button>
+              <button type="submit" class="mx-btn primary" id="mc-ok">${ico('check', 'width:16px;height:16px')}Cargar a la cola</button>
+            </div>
+          </form></div>`;
+        m.addEventListener('click', ev => { if (ev.target === m || ev.target.closest('[data-cerrar]')) cerrarFicha(); });
+        document.body.appendChild(m); document.body.style.overflow = 'hidden';
+        $('mc-titulo').focus();
+        $('mc-form').addEventListener('submit', async ev => {
+          ev.preventDefault();
+          const msg = $('mc-msg'), err = (t, el) => { msg.className = 'mx-msg err'; msg.textContent = t; if (el) $(el).focus(); };
+          const fecha = $('mc-fecha').value, titulo = $('mc-titulo').value.trim(), url = normUrl($('mc-url').value), vtxt = $('mc-val').value.trim();
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return err('Indicá la fecha del hecho.', 'mc-fecha');
+          if (fecha > hoyISO()) return err('La fecha no puede ser posterior a hoy.', 'mc-fecha');
+          if (titulo.length < 10) return err('Escribí un título de al menos 10 caracteres.', 'mc-titulo');
+          if (url && !urlValida(url)) return err('La dirección no parece válida (por ejemplo: www.ejemplo.com.ar/nota).', 'mc-url');
+          if (vtxt && !isFinite(aNumero(vtxt))) return err('El valorizado tiene que ser un número (por ejemplo 1500000 o 24,5).', 'mc-val');
+          const id = `manual-${fecha}-${slug(titulo)}-${Math.random().toString(36).slice(2, 6)}`;
+          const nat = $('mc-nat').value;
+          const fila = { id, fecha, titulo, resumen: $('mc-res').value.trim(), entidad: $('mc-ent').value.trim(), fuente: $('mc-fuente').value.trim() || (url ? new URL(url).hostname.replace(/^www\./, '') : ''),
+            url, naturaleza: nat, subtipo: $('mc-sub').value.trim(), tipoEvento: $('mc-tipo').value, origen: $('mc-orig').value, factor: $('mc-fact').value,
+            canal: $('mc-canal').value.trim(), impacto: nat === 'Evento' ? $('mc-imp').value : '—', normativa: $('mc-norm').value.trim(),
+            valorizado: vtxt ? aNumero(vtxt) : null, moneda: vtxt ? $('mc-mon').value : '' };
+          $('mc-ok').disabled = true; msg.className = 'mx-msg'; msg.textContent = 'Guardando…';
+          try {
+            const r = await datos.crearCandidato(fila);
+            const c = normC(r); c.ia = iaDe(r); c.iaFija = true; c.montoTexto = '';
+            C.unshift(c); cerrarFicha();
+            estado = 'pendiente'; $('rv-estado').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === 'pendiente'));
+            $('rv-q').value = ''; actualizarCab(); irA(c.id);
+          } catch (e) {
+            console.error('[Monitor] No se pudo cargar el evento', e);
+            $('mc-ok').disabled = false;
+            err(/permiso|42501|row-level/i.test(e.message) ? 'No tenés permiso para cargar eventos (se requiere rol de analista).' : 'No se pudo guardar. Revisá la conexión (detalle en la consola, F12).');
+          }
+        });
+      }
+      if (!esAnalista()) { $('rv-nuevo').disabled = true; $('rv-nuevo').title = 'Solo los analistas pueden cargar eventos'; }
+      $('rv-nuevo').addEventListener('click', abrirCarga);
+
+      // ---------- Fuentes a monitorear ----------
+      let FU = [];
+      const pintarFuentes = () => {
+        $('rv-fu-n').textContent = FU.length;
+        $('rv-fu-l').innerHTML = FU.map(f => `<div><span title="${esc(f.url)}"><a href="${esc(normUrl(f.url))}" target="_blank" rel="noopener" style="color:inherit">${esc(f.nombre || f.url.replace(/^https?:\/\//i, ''))}</a></span>
+            ${esAnalista() ? `<button type="button" class="mx-x" data-fu="${esc(f.id)}" aria-label="Quitar ${esc(f.nombre || f.url)}" style="width:22px;height:22px">${ico('x', 'width:14px;height:14px')}</button>` : ''}</div>`).join('')
+          || '<div class="mx-small" style="background:none;padding:0;font-family:var(--font)">Todavía no hay fuentes agregadas.</div>';
+      };
+      if (!esAnalista()) $('rv-fu-form').hidden = true;
+      datos.fuentes().then(l => { FU = l || []; pintarFuentes(); }).catch(e => { console.warn('[Monitor] fuentes', e); $('rv-fu-l').innerHTML = '<div class="mx-small" style="background:none;padding:0">No se pudieron cargar las fuentes.</div>'; });
+      $('rv-fu-form').addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const msg = $('rv-fu-msg'), url = normUrl($('rv-fu-url').value), nombre = $('rv-fu-nom').value.trim();
+        if (!urlValida(url)) { msg.className = 'mx-msg err'; msg.textContent = 'Escribí una dirección válida, por ejemplo www.ejemplo.com.ar'; $('rv-fu-url').focus(); return; }
+        const corta = u => u.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/+$/, '').toLowerCase();
+        if (FU.some(f => corta(f.url) === corta(url))) { msg.className = 'mx-msg err'; msg.textContent = 'Esa fuente ya está en la lista.'; return; }
+        $('rv-fu-ok').disabled = true; msg.className = 'mx-msg'; msg.textContent = 'Guardando…';
+        try {
+          const f = await datos.agregarFuente(url, nombre); FU.unshift(f); pintarFuentes();
+          $('rv-fu-url').value = ''; $('rv-fu-nom').value = ''; msg.className = 'mx-msg ok'; msg.textContent = 'Fuente agregada.';
+        } catch (e) { console.error('[Monitor] fuente', e); msg.className = 'mx-msg err'; msg.textContent = /23505|duplicate/i.test(e.message) ? 'Esa fuente ya está en la lista.' : 'No se pudo guardar la fuente.'; }
+        $('rv-fu-ok').disabled = false;
+      });
+      $('rv-fu-l').addEventListener('click', async ev => {
+        const b = ev.target.closest('[data-fu]'); if (!b) return;
+        const f = FU.find(x => String(x.id) === b.dataset.fu); if (!f || !window.confirm(`¿Quitar la fuente ${f.nombre || f.url}?`)) return;
+        try { await datos.borrarFuente(f.id); FU = FU.filter(x => x !== f); pintarFuentes(); }
+        catch (e) { console.error('[Monitor] fuente', e); $('rv-fu-msg').className = 'mx-msg err'; $('rv-fu-msg').textContent = 'No se pudo quitar la fuente.'; }
+      });
+
       $('rv-exp').addEventListener('click', () => {
         const clave = 'mx-ultexp-candidatos', ult = leerLS(clave);
         const marca = c => c.decision === 'pendiente' ? c.agregado : (c.revisadoEn || c.agregado);

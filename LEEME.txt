@@ -1,4 +1,4 @@
-MONITOR DE CIBERSEGURIDAD · SITIO WEB
+MONITOR DE RIESGO · SITIO WEB
 =====================================
 
 Cómo verlo
@@ -9,8 +9,9 @@ Cómo verlo
 Páginas
   index.html        Panorama del día (nivel de amenaza, indicadores, Argentina, internacional, gráficos)
   noticias.html     Noticias y filtros (búsqueda, categoría, ámbito, severidad, período, exportación)
-  revisar.html      Para revisar (cola de candidatos, clasificación A 4793, aprobar / rechazar)
-  registro.html     Registro A 4793 (eventos aprobados, distribución por tipo, exportación)
+  revisar.html      Para revisar (cola de candidatos, clasificación A 4793, aprobar / rechazar,
+                    carga manual de eventos y fuentes a monitorear)
+  registro.html     Registro de eventos (eventos aprobados, distribución por tipo, exportación)
   metodologia.html  Metodología (criterios, niveles, taxonomía, flujo, fuentes)
 
 Archivos
@@ -41,7 +42,7 @@ Alta de usuarios
      auth.users where email = 'correo@dominio');
 
 Exportar
-  Noticias y Panorama: botón "Exportar". Registro A 4793: botón "Exportar registro".
+  Noticias y Panorama: botón "Exportar". Registro de eventos: botón "Exportar registro".
   Para revisar: botón "Exportar candidatos" (precalificados por la IA, clasificados por
   analistas, todos, actualizados, desde una fecha o la cola actual). Incluye la clasificación
   sugerida por la IA y la clasificación final del analista, y marca si fue corregida.
@@ -55,3 +56,10 @@ Exportar
 Actualizar los datos
   Modo supabase: los datos nuevos se cargan en la base y se ven al recargar la página.
   Modo local: reemplazá datos/datos.js por la versión nueva y recargá la página.
+
+Carga manual y fuentes (Para revisar)
+  - "Cargar evento": un analista carga un hecho a mano; entra a la cola como pendiente,
+    firmado "Manual · <nombre>", y se revisa y aprueba como cualquier candidato.
+  - "Fuentes a monitorear": los analistas agregan o quitan sitios (ej.: www.ejemplo.com.ar).
+    Se guardan en la tabla monitor_fuentes.
+  Requiere ejecutar una vez sql/2026-10-29_carga_manual_y_fuentes.sql en Supabase > SQL Editor.

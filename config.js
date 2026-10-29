@@ -10,6 +10,6 @@ window.MX_CONFIG = {
     // Clave pública (publishable). Es segura en el navegador: los datos están protegidos por usuario y contraseña (RLS).
     // NUNCA pongas acá la clave service_role / secret.
     anonKey: 'sb_publishable_UlhKyAUIXPFxrKkEb0lJxw_66kgPg9o',
-    tablas: { noticias: 'monitor_noticias', candidatos: 'monitor_candidatos', estado: 'monitor_estado', perfiles: 'monitor_perfiles' }
+    tablas: { noticias: 'monitor_noticias', candidatos: 'monitor_candidatos', estado: 'monitor_estado', perfiles: 'monitor_perfiles', fuentes: 'monitor_fuentes' }
   }
 };
