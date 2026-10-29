@@ -1,0 +1,57 @@
+MONITOR DE CIBERSEGURIDAD · SITIO WEB
+=====================================
+
+Cómo verlo
+  1. Abrí esta carpeta en Visual Studio Code (Archivo > Abrir carpeta).
+  2. Clic derecho en index.html > "Open with Live Server" (extensión Live Server).
+     También funciona con doble clic en index.html.
+
+Páginas
+  index.html        Panorama del día (nivel de amenaza, indicadores, Argentina, internacional, gráficos)
+  noticias.html     Noticias y filtros (búsqueda, categoría, ámbito, severidad, período, exportación)
+  revisar.html      Para revisar (cola de candidatos, clasificación A 4793, aprobar / rechazar)
+  registro.html     Registro A 4793 (eventos aprobados, distribución por tipo, exportación)
+  metodologia.html  Metodología (criterios, niveles, taxonomía, flujo, fuentes)
+
+Archivos
+  assets/monitor.css   Estilos (modo claro y oscuro)
+  assets/monitor.js    Lógica de todas las páginas
+  config.js            Fuente de datos
+  - Modo 'supabase' (actual): lee y escribe en la base compartida de Supabase (proyecto
+    Inventario Clear, tablas monitor_noticias, monitor_candidatos, monitor_estado,
+    monitor_perfiles y monitor_historial). Cada persona entra con su correo y contraseña.
+      * Rol 'analista': ve todo y clasifica / aprueba / rechaza candidatos.
+      * Rol 'lector': ve todo en modo solo lectura.
+      * Sin perfil en monitor_perfiles: no ve ningún dato.
+    La base firma cada decisión con el nombre del perfil y la fecha, guarda la sugerencia
+    original de la IA y deja un historial de cambios (monitor_historial). Un analista no
+    puede modificar título, fuente, fecha ni ninguna columna que no sea de clasificación.
+  - Modo 'local': cambiar fuente a 'local' en config.js. Lee datos/datos.js y guarda las
+    decisiones en el navegador de quien revisa (útil sin conexión).
+  En config.js solo va la clave pública (publishable). La clave service_role / secret
+  NUNCA se pone en el sitio.
+
+Alta de usuarios
+  1. Supabase → Authentication → Users → Add user → Create new user (correo + contraseña,
+     marcar "Auto Confirm User").
+  2. Darle el rol (SQL Editor):
+       insert into monitor_perfiles (user_id, nombre, rol)
+       select id, 'Nombre Apellido', 'analista' from auth.users where email = 'correo@dominio';
+     Para quitar el acceso: delete from monitor_perfiles where user_id = (select id from
+     auth.users where email = 'correo@dominio');
+
+Exportar
+  Noticias y Panorama: botón "Exportar". Registro A 4793: botón "Exportar registro".
+  Para revisar: botón "Exportar candidatos" (precalificados por la IA, clasificados por
+  analistas, todos, actualizados, desde una fecha o la cola actual). Incluye la clasificación
+  sugerida por la IA y la clasificación final del analista, y marca si fue corregida.
+  - Qué exportar: todas, solo las actualizadas (cargadas después de la última exportación
+    desde este navegador), las cargadas desde una fecha, o lo que estás viendo con filtros.
+  - Formato: Excel (.xlsx, con filtros y columnas numéricas) o CSV (separado por ";").
+  - Valorización: monto mencionado en el hecho, moneda, monto y "Valorizado ARS".
+    En los candidatos, el analista puede cargar o corregir el valorizado al revisar.
+    Para convertir montos en dólares o euros a pesos, completá "cotizaciones" en config.js.
+
+Actualizar los datos
+  Modo supabase: los datos nuevos se cargan en la base y se ven al recargar la página.
+  Modo local: reemplazá datos/datos.js por la versión nueva y recargá la página.
