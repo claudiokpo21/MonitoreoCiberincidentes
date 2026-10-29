@@ -16,15 +16,29 @@ Páginas
 Archivos
   assets/monitor.css   Estilos (modo claro y oscuro)
   assets/monitor.js    Lógica de todas las páginas
-  config.js            Fuente de datos: 'local' o 'supabase'
-  datos/datos.js       Datos del monitor (noticias, candidatos y estado del día)
+  config.js            Fuente de datos
+  - Modo 'supabase' (actual): lee y escribe en la base compartida de Supabase (proyecto
+    Inventario Clear, tablas monitor_noticias, monitor_candidatos, monitor_estado,
+    monitor_perfiles y monitor_historial). Cada persona entra con su correo y contraseña.
+      * Rol 'analista': ve todo y clasifica / aprueba / rechaza candidatos.
+      * Rol 'lector': ve todo en modo solo lectura.
+      * Sin perfil en monitor_perfiles: no ve ningún dato.
+    La base firma cada decisión con el nombre del perfil y la fecha, guarda la sugerencia
+    original de la IA y deja un historial de cambios (monitor_historial). Un analista no
+    puede modificar título, fuente, fecha ni ninguna columna que no sea de clasificación.
+  - Modo 'local': cambiar fuente a 'local' en config.js. Lee datos/datos.js y guarda las
+    decisiones en el navegador de quien revisa (útil sin conexión).
+  En config.js solo va la clave pública (publishable). La clave service_role / secret
+  NUNCA se pone en el sitio.
 
-Fuente de datos
-  - Modo 'local' (actual): lee datos/datos.js. Las decisiones de revisión quedan guardadas
-    en el navegador de quien revisa; se pueden exportar desde el Registro A 4793.
-  - Modo 'supabase': lee y escribe en una base de datos compartida. Completar url y anonKey
-    en config.js y crear las tablas noticias, candidatos y estado con los mismos campos
-    que datos/datos.js.
+Alta de usuarios
+  1. Supabase → Authentication → Users → Add user → Create new user (correo + contraseña,
+     marcar "Auto Confirm User").
+  2. Darle el rol (SQL Editor):
+       insert into monitor_perfiles (user_id, nombre, rol)
+       select id, 'Nombre Apellido', 'analista' from auth.users where email = 'correo@dominio';
+     Para quitar el acceso: delete from monitor_perfiles where user_id = (select id from
+     auth.users where email = 'correo@dominio');
 
 Exportar
   Noticias y Panorama: botón "Exportar". Registro A 4793: botón "Exportar registro".
@@ -39,4 +53,5 @@ Exportar
     Para convertir montos en dólares o euros a pesos, completá "cotizaciones" en config.js.
 
 Actualizar los datos
-  Reemplazá datos/datos.js por la versión nueva y recargá la página.
+  Modo supabase: los datos nuevos se cargan en la base y se ven al recargar la página.
+  Modo local: reemplazá datos/datos.js por la versión nueva y recargá la página.
