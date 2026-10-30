@@ -614,3 +614,17 @@ body { margin: 0; }
 .mx .mx-srv-acc .mx-x { border: 0; background: transparent; color: var(--mute); }
 .mx .mx-srv-acc .mx-x:hover { background: var(--soft-2); color: var(--ink); }
 @media (hover: none) { .mx .mx-srv-acc { opacity: 1; } }
+
+/* Página Apps */
+.mx .mx-apps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.mx .ap{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh-1);padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.mx .ap h3{margin:0;font-size:15px;color:var(--ink)} .mx .ap .st{display:flex;justify-content:space-between;align-items:center;background:var(--soft);border-radius:8px;padding:8px 10px}
+.mx .ap .st span{font-size:12px;color:var(--ink-2);font-weight:600} .mx .ap .st b{font-size:18px;font-family:'JetBrains Mono',monospace}
+.mx .ap .st small{font-size:11px;color:var(--mute);margin-left:4px;font-weight:500}
+.mx .estr{letter-spacing:1px;font-size:12px} .mx .tm{display:grid;grid-template-columns:200px 1fr 30px;gap:10px;align-items:center;margin:8px 0;font-size:13px}
+.mx .tm .b{height:10px;background:var(--soft-2);border-radius:5px;overflow:hidden} .mx .tm .b i{display:block;height:100%;border-radius:5px}
+@media(max-width:1000px){.mx .mx-apps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.mx .ap .ev { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--mute); }
+.mx .ap-graf { display: grid; grid-template-columns: 170px 1fr 54px; gap: 8px 12px; align-items: center; font-size: 12.5px; }
+.mx .ap-graf svg { width: 100%; height: 34px; display: block; }

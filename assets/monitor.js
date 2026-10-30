@@ -1570,6 +1570,98 @@
       pintar();
     },
 
+    async apps() {
+      if (!usaSupabase) { $('ap-cards').innerHTML = '<div class="mx-empty">La sección Apps funciona solo con la base de Supabase.</div>'; return; }
+      const TN = { play: 'Google Play', ios: 'App Store' };
+      let A, L, R;
+      try {
+        [A, L, R] = await Promise.all([sbFetch('monitor_apps?select=*&activo=eq.true&order=orden.asc'),
+          sbFetch(`monitor_apps_lecturas?select=app_id,tienda,fecha,rating,cantidad,version,actualizada,error&fecha=gte.${new Date(Date.now() - 120 * 864e5).toISOString()}&order=fecha.asc&limit=5000`),
+          sbFetch('monitor_apps_resenas?select=*&order=fecha.desc.nullslast&limit=1000')]);
+      } catch (err) {
+        if (err && err.sinSesion) throw err;
+        $('ap-cards').innerHTML = '<div class="mx-empty" style="grid-column:1/-1">Todavía no están creadas las tablas de Apps. Ejecutá sql/2026-10-30_apps.sql en Supabase &gt; SQL Editor.</div>';
+        ['ap-temas', 'ap-evol'].forEach(i => { $(i).innerHTML = ''; }); $('ap-rev').innerHTML = ''; return;
+      }
+      const nom = id => (A.find(a => a.id === id) || {}).nombre || id;
+      const col = r => r == null ? 'var(--mute)' : r < 3 ? 'var(--alta)' : r < 4 ? 'var(--media)' : 'var(--ok)';
+      const est = r => { const f = Math.round(r); return `<span class="estr" style="color:${col(r)}">${'★'.repeat(f)}<span style="color:var(--line-2)">${'★'.repeat(5 - f)}</span></span>`; };
+      const num = r => Number(r).toFixed(1).replace('.', ',');
+      const ultima = (app, t) => L.filter(x => x.app_id === app && x.tienda === t && x.rating != null).slice(-1)[0];
+      const hace = (app, t, dias) => { const lim = new Date(Date.now() - dias * 864e5).toISOString(); return L.filter(x => x.app_id === app && x.tienda === t && x.rating != null && x.fecha <= lim).slice(-1)[0]; };
+      const ult = L.slice(-1)[0];
+      $('ap-ult').textContent = `Última lectura · ${ult ? fHora(ult.fecha) : 'todavía no hubo'}`;
+      $('ap-app').innerHTML = '<option value="">Todas las apps</option>' + A.map(a => `<option value="${esc(a.id)}">${esc(a.nombre)}</option>`).join('');
+      let tienda = '', estr = '', appSel = '';
+      const desde90 = new Date(Date.now() - 90 * 864e5).toISOString(), desde7 = new Date(Date.now() - 7 * 864e5).toISOString(), desde1 = new Date(Date.now() - 864e5).toISOString();
+      function pintar() {
+        const TS = tienda ? [tienda] : ['play', 'ios'];
+        // Alertas: muchas de 1-2 estrellas en 24 h, caída de calificación, temas sensibles
+        const al = [];
+        A.forEach(a => TS.forEach(t => {
+          const malas = R.filter(r => r.app_id === a.id && r.tienda === t && r.fecha >= desde1 && r.estrellas && r.estrellas <= 2);
+          if (malas.length >= 3) al.push(`<b>${esc(a.nombre)} · ${TN[t]}:</b> ${malas.length} opiniones de 1–2 ★ en las últimas 24 horas (tema principal: ${esc(modo(malas.map(m => m.tema)))}).`);
+          const u = ultima(a.id, t), h = hace(a.id, t, 7);
+          if (u && h && u.rating - h.rating <= -0.2) al.push(`<b>${esc(a.nombre)} · ${TN[t]}:</b> la calificación bajó de ${num(h.rating)} a ${num(u.rating)} en 7 días.`);
+          const sens = R.filter(r => r.app_id === a.id && r.tienda === t && r.fecha >= desde7 && /Fraude/.test(r.tema || ''));
+          if (sens.length) al.push(`<b>${esc(a.nombre)} · ${TN[t]}:</b> ${plural(sens.length, 'opinión menciona', 'opiniones mencionan')} posible fraude o robo en los últimos 7 días.`);
+        }));
+        $('ap-alertas').innerHTML = al.map(t => `<div class="mx-nota" style="border-left:4px solid var(--alta)">${ico('alert', 'color:var(--alta)')}<div>${t}</div></div>`).join('');
+        // Tarjetas
+        const fila = (lbl, a, t) => { const u = ultima(a.id, t), h = hace(a.id, t, 30);
+          const d = u && h ? Math.round((u.rating - h.rating) * 10) / 10 : null;
+          return `<div class="st"><span>${lbl}</span>${u ? `<span>${est(u.rating)} <b style="color:${col(u.rating)}">${num(u.rating)}</b><small>(${Number(u.cantidad || 0).toLocaleString('es-AR')})</small>${d ? `<small style="color:${d > 0 ? 'var(--ok)' : 'var(--alta)'}">${d > 0 ? '▲' : '▼'} ${num(Math.abs(d))}</small>` : ''}</span>` : '<small>Sin calificaciones suficientes</small>'}</div>`; };
+        $('ap-cards').innerHTML = A.map(a => {
+          const rs = R.filter(r => r.app_id === a.id && TS.includes(r.tienda) && r.fecha >= desde90);
+          const t = rs.length ? modo(rs.map(r => r.tema)) : '';
+          const vers = TS.map(x => { const u = L.filter(y => y.app_id === a.id && y.tienda === x && y.version).slice(-1)[0]; return u ? `${x === 'play' ? 'Play' : 'iOS'} ${esc(u.version)}` : ''; }).filter(Boolean).join(' · ');
+          return `<div class="ap"><h3>${esc(a.nombre)}</h3>${TS.map(x => fila(TN[x], a, x)).join('')}
+            <div class="mx-small">${vers ? 'Versión: ' + vers + '<br>' : ''}Opiniones en 90 días: ${rs.length}${rs.length ? ` · 1–2 ★: ${rs.filter(r => r.estrellas && r.estrellas <= 2).length}` : ''}</div>
+            ${t ? `<div><span class="mx-badge ${t === 'General' ? 'neutral' : 'media'}">Tema principal: ${esc(t)}</span></div>` : '<div><span class="mx-badge neutral">Sin opiniones recientes</span></div>'}</div>`; }).join('');
+        // Temas
+        const R90 = R.filter(r => r.fecha >= desde90 && TS.includes(r.tienda) && (!appSel || r.app_id === appSel));
+        const cnt = {}; R90.forEach(r => { cnt[r.tema || 'General'] = (cnt[r.tema || 'General'] || 0) + 1; });
+        const T = Object.entries(cnt).sort((a, b) => b[1] - a[1]), mx = Math.max(1, ...T.map(t => t[1]));
+        $('ap-temas-n').textContent = plural(R90.length, 'opinión', 'opiniones');
+        $('ap-temas').innerHTML = T.map(([k, n]) => `<div class="tm"><span>${esc(k)}</span><span class="b"><i style="width:${n / mx * 100}%;background:${k === 'General' ? 'var(--line-2)' : /Fraude|Token|Ingreso/.test(k) ? 'var(--alta)' : 'var(--media)'}"></i></span><b class="mx-mono">${n}</b></div>`).join('') || '<div class="mx-empty">Sin opiniones en los últimos 90 días.</div>';
+        // Evolución (calificación diaria por app y tienda)
+        const dias = [...new Set(L.map(x => fechaART(x.fecha)))].sort();
+        if (dias.length < 2) $('ap-evol').innerHTML = `<div class="mx-empty" style="padding:30px 10px">El gráfico se arma con las lecturas automáticas (cada 6 horas).${dias.length ? ' Ya hay datos de 1 día; desde mañana se ve la línea.' : ''}</div>`;
+        else $('ap-evol').innerHTML = '<div class="ap-graf">' + A.flatMap(a => TS.map(t => {
+          const pts = dias.map(d => { const l = L.filter(x => x.app_id === a.id && x.tienda === t && x.rating != null && fechaART(x.fecha) === d).slice(-1)[0]; return l ? +l.rating : null; });
+          const v = pts.filter(x => x != null); if (!v.length) return '';
+          const mn = Math.min(...v) - .2, mxx = Math.max(...v) + .2, W = 300, H = 34, x = i => i / (dias.length - 1) * W, y = r => H - (r - mn) / (mxx - mn) * H;
+          const dd = pts.map((r, i) => r == null ? null : `${x(i).toFixed(1)},${y(r).toFixed(1)}`).filter(Boolean).join(' L');
+          return `<span>${esc(a.nombre)} <span class="mx-small">${t === 'play' ? 'Play' : 'iOS'}</span></span><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="M${dd}" fill="none" stroke="${col(v[v.length - 1])}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg><b class="mx-mono" style="color:${col(v[v.length - 1])}">${num(v[v.length - 1])}</b>`;
+        })).join('') + '</div>';
+        // Opiniones
+        const vis = R.filter(r => TS.includes(r.tienda) && (!appSel || r.app_id === appSel) &&
+          (!estr || (estr === 'r' ? !!r.respuesta : estr.includes(String(r.estrellas)) || (estr === '12' && r.estrellas <= 2) || (estr === '45' && r.estrellas >= 4))));
+        $('ap-rev').innerHTML = vis.slice(0, 200).map(r => `<tr><td class="nw mx-mono" style="color:var(--ink-2)">${esc(r.fecha ? fLarga(fechaART(r.fecha)) : '—')}</td>
+            <td class="nw"><b>${esc(nom(r.app_id))}</b>${r.version ? `<div class="mx-small">v${esc(r.version)}</div>` : ''}</td><td class="nw"><span class="mx-chip-mono">${TN[r.tienda]}</span></td>
+            <td class="nw">${r.estrellas ? est(r.estrellas) : '—'}</td><td class="nw"><span class="mx-badge ${r.tema === 'General' ? 'neutral' : /Fraude|Token|Ingreso/.test(r.tema || '') ? 'alta' : 'media'}">${esc(r.tema || 'General')}</span></td>
+            <td style="min-width:320px">${r.titulo ? `<b>${esc(r.titulo)}</b> · ` : ''}${esc(r.texto || '')}${r.respuesta ? `<div class="mx-small" style="margin-top:6px;border-left:3px solid var(--primary);padding-left:8px"><b>Respuesta del banco:</b> ${esc(r.respuesta)}</div>` : ''}
+            <div class="mx-small" style="margin-top:4px">${esc(r.autor || '')}</div></td></tr>`).join('')
+          || `<tr><td colspan="6" class="mx-empty">${R.length ? 'No hay opiniones con estos filtros.' : 'Todavía no se leyeron opiniones. Se cargan en la próxima lectura automática o con "Actualizar ahora".'}</td></tr>`;
+        $('ap-exp').onclick = () => csv('opiniones-apps', ['Fecha', 'App', 'Tienda', 'Estrellas', 'Tema', 'Título', 'Opinión', 'Versión', 'Autor', 'Respuesta del banco'],
+          vis.map(r => [r.fecha ? fechaART(r.fecha) : '', nom(r.app_id), TN[r.tienda], r.estrellas || '', r.tema || '', r.titulo || '', r.texto || '', r.version || '', r.autor || '', r.respuesta || '']));
+      }
+      const modo = l => { const c = {}; l.forEach(x => { c[x || 'General'] = (c[x || 'General'] || 0) + 1; }); const o = Object.entries(c).sort((a, b) => (b[0] !== 'General') - (a[0] !== 'General') || b[1] - a[1]); return o.length ? o[0][0] : ''; };
+      $('ap-tienda').addEventListener('click', ev => { const b = ev.target.closest('[data-t]'); if (!b) return; tienda = b.dataset.t; $('ap-tienda').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
+      $('ap-est').addEventListener('click', ev => { const b = ev.target.closest('[data-e]'); if (!b) return; estr = b.dataset.e; $('ap-est').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
+      $('ap-app').addEventListener('change', () => { appSel = $('ap-app').value; pintar(); });
+      $('ap-act').addEventListener('click', async () => {
+        const b = $('ap-act'); b.disabled = true; b.textContent = 'Leyendo las tiendas…';
+        try {
+          const r = await fetch(`${SB.url}/functions/v1/monitor-apps`, { method: 'POST', headers: { apikey: SB.anonKey, Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' }, body: '{}' });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || j.message || `HTTP ${r.status}`);
+          location.reload();
+        } catch (err) { b.disabled = false; b.textContent = 'Actualizar ahora'; window.alert('No se pudo leer las tiendas: ' + err.message); }
+      });
+      pintar();
+    },
+
     async usuarios() {
       const wrap = $('mx-page').querySelector('.mx-wrap');
       if (!usaSupabase) { wrap.innerHTML = '<div class="mx-empty">La administración de usuarios funciona solo con la base de Supabase (config.js, fuente: \'supabase\').</div>'; return; }
