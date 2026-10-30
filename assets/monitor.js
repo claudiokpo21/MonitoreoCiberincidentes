@@ -470,6 +470,57 @@
     } catch (err) { /* sin candidatos */ }
   }
 
+  // ---------- Disponibilidad de servicios ----------
+  const SERVICIOS = (Array.isArray(CFG.servicios) ? CFG.servicios : []).map(s => {
+    const rx = k => new RegExp('(^|[^a-z0-9áéíóúñ])' + low(k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9áéíóúñ])');
+    return Object.assign({}, s, { _rx: (s.claves && s.claves.length ? s.claves : [s.nombre]).map(rx), _ex: (s.excluir || []).map(low),
+      _dd: s.dd || `https://www.google.com/search?q=${encodeURIComponent('site:downdetector.com.ar ' + s.nombre)}` });
+  });
+  const RX_CAIDA = /ca[ií]da|se cay[oó]|fuera de servicio|interrupci[oó]n|sin servicio|no funciona|demoras?|intermitencia|falla (t[eé]cnica|masiva|general|nacional)|alteraciones en la actividad/;
+  // Incidentes de disponibilidad (caídas, fallas, interrupciones) que mencionan a algún servicio de la lista
+  function incidentesServicios(N, C) {
+    const out = [], ids = new Set();
+    const add = (id, base) => {
+      const txt = low([base.titulo, base.resumen, base.entidad, base.clase].join(' '));
+      if (!RX_CAIDA.test(low(base.clase)) && !RX_CAIDA.test(txt)) return;
+      const serv = SERVICIOS.filter(s => { let t = txt; s._ex.forEach(e => { t = t.split(e).join(' '); }); return s._rx.some(r => r.test(t)); }).map(s => s.nombre);
+      if (!serv.length) return;
+      const k = id || base.url || base.titulo; if (ids.has(k)) return; ids.add(k);
+      out.push(Object.assign(base, { servicios: serv }));
+    };
+    N.forEach(x => add(x.id, { src: x, fecha: x.fecha, titulo: x.titulo, resumen: x.resumen, entidad: x.entidad, clase: x.tipo, sev: x.severidad, url: x.url, fuente: x.fuente }));
+    C.filter(c => c.decision !== 'rechazado').forEach(c => add(c.id, { src: null, fecha: c.fecha, titulo: c.titulo, resumen: c.resumen, entidad: c.entidad,
+      clase: [c.subtipo, c.tipoEvento].join(' '), sev: low(c.impacto) === 'alta' ? 'alta' : low(c.impacto) === 'baja' ? 'baja' : 'media', url: c.url, fuente: c.fuente }));
+    return out.filter(h => h.fecha).sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }
+  function tarjetaServicio(s, h, idx) {
+    const caida = h && h.sev === 'alta';
+    return `<div class="mx-srv ${h ? (caida ? 'caida' : 'falla') : ''}">
+        <div class="mx-srv-h"><b title="${esc(s.nombre)}">${esc(s.nombre)}</b><a class="dd" href="${esc(s._dd)}" target="_blank" rel="noopener" title="Reportes de usuarios en Downdetector">Reportes ↗</a></div>
+        <div class="mx-srv-e"><i></i>${h ? `${caida ? 'Caída registrada' : 'Falla registrada'} · ${esc(fCorta(h.fecha))}` : 'Sin incidentes registrados'}</div>
+        ${h ? `<div class="mx-srv-t" ${idx != null ? `data-srv="${idx}"` : ''} title="${esc(h.titulo)}">${esc(h.titulo.length > 90 ? h.titulo.slice(0, 88) + '…' : h.titulo)}</div>` : ''}
+      </div>`;
+  }
+  function pintarServicios(N, C) {
+    const cont = $('mx-serv'); if (!cont) return;
+    if (!SERVICIOS.length) { $('mx-serv-card').hidden = true; return; }
+    const desde = fechaART(new Date(Date.now() - 7 * 864e5).toISOString());
+    const I = incidentesServicios(N, C).filter(h => h.fecha >= desde);
+    const fichas = []; let html = '', grupo = '', nInc = 0, ocultos = 0;
+    SERVICIOS.forEach(s => {
+      const h = I.find(x => x.servicios.includes(s.nombre));
+      if (h) nInc++;
+      if (!h && !s.destacado) { ocultos++; return; }
+      if (s.grupo && s.grupo !== grupo) { grupo = s.grupo; html += `<div class="mx-serv-g">${esc(grupo)}</div>`; }
+      let idx = null; if (h && h.src) { fichas.push(h.src); idx = fichas.length - 1; }
+      html += tarjetaServicio(s, h, idx);
+    });
+    if (ocultos) html += `<div class="mx-serv-g" style="text-transform:none;letter-spacing:0;font-weight:500">Otros ${ocultos} servicios sin incidentes registrados · <a href="servicios.html">ver todos e histórico →</a></div>`;
+    cont.innerHTML = html;
+    $('mx-serv-res').textContent = nInc ? `${plural(nInc, 'servicio')} con incidentes · 7 días` : 'Sin incidentes · 7 días';
+    cont.querySelectorAll('[data-srv]').forEach(el => el.addEventListener('click', () => abrirFicha(fichas[+el.dataset.srv])));
+  }
+
   // ---------- Cálculos compartidos ----------
   const ventanas = N => {
     const ref = N.length ? new Date(N[0].fecha + 'T12:00:00Z') : new Date();
@@ -531,6 +582,9 @@
         $('mx-reloj').textContent = t[0].toUpperCase() + t.slice(1) + ' · UTC-3'; };
       tick(); setInterval(tick, 1000);
       $('mx-datos').textContent = `Datos al ${E.ultimaActualizacion || '—'}`;
+
+      // Disponibilidad de servicios: hechos confirmados de los últimos 7 días + enlace a Downdetector
+      try { pintarServicios(N, C); } catch (err) { console.error('[Monitor] Servicios:', err); }
       const pend = C.filter(c => c.decision === 'pendiente').length;
       if (pend) { $('mx-aviso-n').textContent = pend; $('mx-aviso').hidden = false; }
 
@@ -1294,6 +1348,84 @@
       };
       $('nm-tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (!b) return; history.replaceState(null, '', '#' + b.dataset.tab); verTab(b.dataset.tab); });
       verTab(location.hash.slice(1));
+      pintar();
+    },
+
+    async servicios() {
+      const [N, C] = await Promise.all([datos.noticias(), datos.candidatos().catch(() => [])]);
+      const TODOS = incidentesServicios(N, C);
+      const hoy = hoyISO(), diaMs = 864e5;
+      const menos = (f, d) => new Date(new Date(f + 'T12:00:00Z').getTime() - d * diaMs).toISOString().slice(0, 10);
+      const difDias = (a, b) => Math.round((new Date(a + 'T12:00:00Z') - new Date(b + 'T12:00:00Z')) / diaMs);
+      const lunes = f => { const d = new Date(f + 'T12:00:00Z'); return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * diaMs).toISOString().slice(0, 10); };
+      const GRUPOS = [...new Set(SERVICIOS.map(s => s.grupo || 'Otros'))];
+      $('sv-grupo').innerHTML = '<button type="button" class="mx-chipbtn on" data-g="">Todos</button>' + GRUPOS.map(g => `<button type="button" class="mx-chipbtn" data-g="${esc(g)}">${esc(g)}</button>`).join('');
+      const primero = TODOS.length ? TODOS[TODOS.length - 1].fecha : hoy;
+      let dias = +(leerLS('mx-sv-per') || 90), grupo = '', fichas = [], verTodos = false;
+      const sevB = s => `<span class="mx-badge ${s === 'alta' ? 'alta' : s === 'baja' ? 'baja' : 'media'}">${s === 'alta' ? 'Caída' : 'Falla'}</span>`;
+      function pintar() {
+        const desde = dias ? menos(hoy, dias - 1) : primero;
+        const S = SERVICIOS.filter(s => !grupo || (s.grupo || 'Otros') === grupo), nombres = new Set(S.map(s => s.nombre));
+        const I = TODOS.filter(h => h.fecha >= desde && h.servicios.some(n => nombres.has(n)));
+        const ant = dias ? TODOS.filter(h => h.fecha < desde && h.fecha >= menos(desde, dias) && h.servicios.some(n => nombres.has(n))) : [];
+        const porServ = n => I.filter(h => h.servicios.includes(n));
+        const afectados = S.filter(s => porServ(s.nombre).length);
+        const diasCon = new Set(I.map(h => h.fecha)).size, totalDias = Math.max(1, difDias(hoy, desde) + 1);
+        const ult = TODOS.find(h => h.servicios.some(n => nombres.has(n)));
+        const caidas = I.filter(h => h.sev === 'alta').length;
+        const K = [
+          { t: 'Incidentes en el período', v: I.length, s: `${plural(caidas, 'caída')} · ${plural(I.length - caidas, 'falla menor', 'fallas menores')}`, i: 'activity', d: !dias ? '' : ant.length ? delta(I.length, ant.length).replace(/ sem\./, ' vs. período ant.') : `<span class="mx-delta igual">${I.length ? 'sin incidentes en el período ant.' : 'sin cambios'}</span>` },
+          { t: 'Servicios afectados', v: `${afectados.length}<span class="pct" style="font-size:14px"> / ${S.length}</span>`, s: afectados.length ? 'Más afectado: ' + afectados.map(x => [x.nombre, porServ(x.nombre).length]).sort((a, b) => b[1] - a[1])[0].join(' · ') : 'Ningún servicio con incidentes', i: 'alert', ib: 'rojo', vc: afectados.length ? 'var(--alta)' : '' },
+          { t: 'Días con algún incidente', v: diasCon, s: `${pct(diasCon, totalDias)}% de ${plural(totalDias, 'día')} · ${100 - pct(diasCon, totalDias)}% sin incidentes`, i: 'hour', ib: 'azul' },
+          { t: 'Días desde el último incidente', v: ult ? difDias(hoy, ult.fecha) : '—', s: ult ? `${ult.servicios.join(', ')} · ${fLarga(ult.fecha)}` : 'Sin incidentes registrados', i: 'check', vc: ult && difDias(hoy, ult.fecha) <= 2 ? 'var(--media)' : 'var(--ok)' }];
+        $('sv-kpis').innerHTML = K.map(k => `<div class="mx-kpi"><div class="mx-kpi-h"><span class="mx-eyebrow">${k.t}</span><span class="mx-kpi-ib ${k.ib || ''}">${ico(k.i, 'width:17px;height:17px')}</span></div>
+          <div class="mx-kpi-v"><span class="n"><span class="mx-stat" ${k.vc ? `style="color:${k.vc}"` : ''}>${k.v}</span></span>${k.d || ''}</div>
+          <div class="mx-small">${esc(k.s)}</div></div>`).join('');
+
+        // Mapa por semana
+        const semanas = []; for (let w = lunes(desde); w <= hoy; w = menos(w, -7)) semanas.push(w);
+        const sem = semanas.length > 53 ? semanas.slice(-53) : semanas;
+        const celda = (n, w) => { const l = porServ(n).filter(h => lunes(h.fecha) === w); return l.length ? (l.some(h => h.sev === 'alta') ? 'alta' : 'media') : ''; };
+        $('sv-mapa-t').textContent = `${plural(sem.length, 'semana')} · desde ${fLarga(sem[0])}`;
+        let g0 = '';
+        $('sv-mapa').innerHTML = `<div class="mx-svmap" style="--cols:${sem.length}">` + S.map(s => {
+          const cab = (s.grupo || 'Otros') !== g0 ? `<div class="g">${esc(g0 = s.grupo || 'Otros')}</div>` : '';
+          return cab + `<div class="n" title="${esc(s.nombre)}">${esc(s.nombre)}</div><div class="r">${sem.map(w => { const c = celda(s.nombre, w); return `<i class="${c}" title="${esc(s.nombre)} · semana del ${fLarga(w)}${c ? (c === 'alta' ? ' · caída' : ' · falla') : ' · sin incidentes'}"></i>`; }).join('')}</div>`;
+        }).join('') + `</div>`;
+
+        // Ranking por servicio
+        const filas = S.map(s => { const l = porServ(s.nombre), u = TODOS.find(h => h.servicios.includes(s.nombre)); return { s, n: l.length, a: l.filter(h => h.sev === 'alta').length, dias: new Set(l.map(h => h.fecha)).size, u }; })
+          .sort((a, b) => b.n - a.n || b.a - a.a || a.s.nombre.localeCompare(b.s.nombre));
+        const conInc = filas.filter(f => f.n), sinInc = filas.length - conInc.length;
+        $('sv-todos').hidden = !sinInc; $('sv-todos').textContent = verTodos ? 'Ver solo los afectados' : `Mostrar los ${sinInc} sin incidentes`;
+        $('sv-tabla').innerHTML = ((verTodos ? filas : conInc).map(f => `<tr><td class="nw"><b>${esc(f.s.nombre)}</b></td><td class="nw mx-small">${esc(f.s.grupo || '')}</td>
+            <td class="nw mx-mono" style="text-align:right">${f.n || '—'}</td><td class="nw mx-mono" style="text-align:right;${f.a ? 'color:var(--alta);font-weight:700' : ''}">${f.a || '—'}</td>
+            <td class="nw mx-mono" style="text-align:right">${f.dias || '—'}</td>
+            <td class="nw">${f.u ? `${esc(fLarga(f.u.fecha))} <span class="mx-small">(hace ${plural(difDias(hoy, f.u.fecha), 'día')})</span>` : '<span class="mx-small">Sin registros</span>'}</td>
+            <td class="nw" style="text-align:right"><a class="mx-btn sm" href="${esc(f.s._dd)}" target="_blank" rel="noopener">Reportes ↗</a></td></tr>`).join(''))
+          || '<tr><td colspan="7" class="mx-empty">Ningún servicio tuvo incidentes en el período.</td></tr>';
+
+        // Historial
+        fichas = [];
+        $('sv-hist-n').textContent = plural(I.length, 'incidente');
+        $('sv-hist').innerHTML = I.map(h => { let idx = ''; if (h.src) { fichas.push(h.src); idx = ` data-f="${fichas.length - 1}"`; }
+          return `<tr><td class="nw mx-mono" style="color:var(--ink-2)">${esc(fLarga(h.fecha))}</td><td class="nw">${sevB(h.sev)}</td>
+            <td style="min-width:140px">${h.servicios.map(n => `<span class="mx-chip-mono" style="margin:0 4px 4px 0;display:inline-block">${esc(n)}</span>`).join('')}</td>
+            <td class="tit"><span${idx} style="${idx ? 'cursor:pointer;text-decoration:underline;text-decoration-color:var(--line-2)' : ''}">${esc(h.titulo)}</span>
+              ${h.url ? `<div><a class="mx-small" href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.fuente || 'Ver nota')} ↗</a></div>` : ''}</td></tr>`; }).join('')
+          || '<tr><td colspan="4" class="mx-empty">No hay incidentes registrados en el período.</td></tr>';
+        $('sv-hist').querySelectorAll('[data-f]').forEach(el => el.addEventListener('click', () => abrirFicha(fichas[+el.dataset.f])));
+        $('sv-exp').onclick = () => csv('incidentes-servicios', ['Fecha', 'Tipo', 'Servicios', 'Título', 'Fuente', 'URL'],
+          I.map(h => [h.fecha, h.sev === 'alta' ? 'Caída' : 'Falla', h.servicios.join(', '), h.titulo, h.fuente || '', h.url || '']));
+      }
+      const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+      document.querySelectorAll('#sv-per .mx-chipbtn').forEach(b => {
+        b.classList.toggle('on', +b.dataset.d === dias);
+        b.addEventListener('click', () => { dias = +b.dataset.d; grabarLS('mx-sv-per', String(dias)); document.querySelectorAll('#sv-per .mx-chipbtn').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
+      });
+      $('sv-todos').addEventListener('click', () => { verTodos = !verTodos; pintar(); });
+      $('sv-grupo').addEventListener('click', ev => { const b = ev.target.closest('[data-g]'); if (!b) return; grupo = b.dataset.g;
+        $('sv-grupo').querySelectorAll('.mx-chipbtn').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
       pintar();
     },
 
