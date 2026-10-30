@@ -12,12 +12,23 @@ Páginas
   revisar.html      Para revisar (cola de candidatos, clasificación A 4793, aprobar / rechazar,
                     carga manual de eventos y fuentes a monitorear)
   registro.html     Registro de eventos (eventos aprobados, distribución por tipo, exportación)
+  servicios.html    Servicios (disponibilidad de bancos, billeteras y redes de pago: indicadores,
+                    mapa de incidentes por semana, ranking por servicio, historial y enlace a Downdetector)
+  usuarios.html     Usuarios (solo administradores)
   metodologia.html  Metodología (criterios, niveles, taxonomía, flujo, fuentes)
 
 Archivos
   assets/monitor.css   Estilos (modo claro y oscuro)
   assets/monitor.js    Lógica de todas las páginas
-  config.js            Fuente de datos
+  config.js            Fuente de datos. La lista "servicios" se usa solo si no existe la tabla monitor_servicios.
+
+Servicios (bancos, billeteras y redes)
+  - Estado en vivo: punto verde si el sitio del servicio responde desde tu conexión, rojo si no
+    responde en 8 segundos. Se verifica cada 5 minutos y con "Verificar ahora".
+  - Analistas y administradores agregan, editan (✎) o quitan (✕) servicios desde la página Servicios
+    o con "+ Agregar" en el Panorama. La lista se guarda en la tabla monitor_servicios y la ve todo el equipo.
+  - Requiere ejecutar una vez sql/2026-10-30_servicios.sql en Supabase > SQL Editor (crea la tabla y
+    carga los 31 servicios iniciales). Mientras no exista, se usa la lista de config.js.
   - Modo 'supabase' (actual): lee y escribe en la base compartida de Supabase (proyecto
     Inventario Clear, tablas monitor_noticias, monitor_candidatos, monitor_estado,
     monitor_perfiles y monitor_historial). Cada persona entra con su correo y contraseña.
