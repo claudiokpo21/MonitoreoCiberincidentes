@@ -597,3 +597,20 @@ body { margin: 0; }
 .mx .mx-svmap .r { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 2px; }
 .mx .mx-svmap .r i { display: block; height: 16px; border-radius: 3px; background: var(--soft-2); }
 .mx .mx-svmap .r i.media { background: var(--media); } .mx .mx-svmap .r i.alta { background: var(--alta); }
+
+/* Estado en vivo */
+.mx .mx-vivo { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--mute); }
+.mx .mx-vivo i { width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); position: relative; flex: none; }
+.mx .mx-vivo.ok { color: var(--ok); } .mx .mx-vivo.ok i { background: var(--ok); }
+.mx .mx-vivo.ok i::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--ok); animation: mx-ping 2.2s cubic-bezier(0, 0, .2, 1) infinite; }
+.mx .mx-vivo.caido { color: var(--alta); } .mx .mx-vivo.caido i { background: var(--alta); }
+.mx .mx-vivo.cargando i { animation: mx-parp 1s ease-in-out infinite alternate; }
+@keyframes mx-parp { to { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .mx .mx-vivo.ok i::after, .mx .mx-vivo.cargando i { animation: none; } }
+.mx .mx-srv.vivo { background: var(--panel); }
+
+.mx .mx-srv-acc { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+.mx .mx-srv:hover .mx-srv-acc, .mx .mx-srv-acc:focus-within { opacity: 1; }
+.mx .mx-srv-acc .mx-x { border: 0; background: transparent; color: var(--mute); }
+.mx .mx-srv-acc .mx-x:hover { background: var(--soft-2); color: var(--ink); }
+@media (hover: none) { .mx .mx-srv-acc { opacity: 1; } }

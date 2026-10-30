@@ -276,7 +276,8 @@
     const r = await fetch(`${SB.url}/rest/v1/${ruta}`, Object.assign({}, op, { headers: Object.assign({ apikey: SB.anonKey, Authorization: `Bearer ${await token()}` }, op.headers || {}) }));
     if (r.status === 401) { borrarSesion(); throw Object.assign(new Error('Sesión no válida'), { sinSesion: true }); }
     if (!r.ok) throw new Error(`${ruta.split('?')[0]}: HTTP ${r.status} ${await r.text()}`);
-    return r.status === 204 ? null : r.json();
+    if (r.status === 204) return null;
+    const t = await r.text(); return t ? JSON.parse(t) : null;
   }
   // Funciones de la base (RPC)
   const sbRpc = (fn, args) => sbFetch(`rpc/${fn}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args || {}) });
@@ -471,11 +472,124 @@
   }
 
   // ---------- Disponibilidad de servicios ----------
-  const SERVICIOS = (Array.isArray(CFG.servicios) ? CFG.servicios : []).map(s => {
+  // Servicios: los de config.js más los agregados desde la página (vista previa: se guardan en este navegador)
+  const EXTRA = 'mx-serv-extra';
+  const leerExtras = () => leerJSON(EXTRA, []);
+  const prepServ = s => {
     const rx = k => new RegExp('(^|[^a-z0-9áéíóúñ])' + low(k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9áéíóúñ])');
     return Object.assign({}, s, { _rx: (s.claves && s.claves.length ? s.claves : [s.nombre]).map(rx), _ex: (s.excluir || []).map(low),
       _dd: s.dd || `https://www.google.com/search?q=${encodeURIComponent('site:downdetector.com.ar ' + s.nombre)}` });
-  });
+  };
+  // Origen de la lista: tabla monitor_servicios (compartida por el equipo); si no existe, config.js + este navegador
+  let SERVICIOS = [], SERV_TABLA = false;
+  const TSERV = (SB.tablas && SB.tablas.servicios) || 'monitor_servicios';
+  const ordenar = l => { const g = [...new Set(l.map(x => x.grupo || 'Otros'))]; return l.map(prepServ).sort((a, b) => g.indexOf(a.grupo || 'Otros') - g.indexOf(b.grupo || 'Otros') || (a.orden || 0) - (b.orden || 0)); };
+  const armarServicios = () => {
+    if (SERV_TABLA) return SERVICIOS;
+    const base = Array.isArray(CFG.servicios) ? CFG.servicios : [], ex = leerExtras().map(x => Object.assign({}, x, { propio: true }));
+    SERVICIOS = ordenar(base.concat(ex)); return SERVICIOS;
+  };
+  async function cargarServicios() {
+    if (usaSupabase) {
+      try {
+        const l = await sbFetch(`${TSERV}?select=*&activo=eq.true&order=orden.asc,nombre.asc`);
+        SERV_TABLA = true; SERVICIOS = ordenar(l.map(x => Object.assign(x, { propio: true }))); return SERVICIOS;
+      } catch (e) { if (e && e.sinSesion) throw e; SERV_TABLA = false; }
+    }
+    return armarServicios();
+  }
+  const puedeEditarServ = () => !usaSupabase || !SERV_TABLA || esAnalista();
+  // Verificación en vivo: el navegador intenta abrir el sitio de cada servicio (responde = en línea)
+  const VIVO = {};
+  async function verificarWeb(url) {
+    if (!url) return { estado: 'sin' };
+    const ctl = new AbortController(), t0 = performance.now(), to = setTimeout(() => ctl.abort(), 8000);
+    try { await fetch(url + (url.includes('?') ? '&' : '?') + '_mx=' + Date.now(), { mode: 'no-cors', cache: 'no-store', signal: ctl.signal });
+      return { estado: 'ok', ms: Math.round(performance.now() - t0) }; }
+    catch (e) { return { estado: 'caido' }; }
+    finally { clearTimeout(to); }
+  }
+  const pintarVivo = (nombre) => {
+    const v = VIVO[nombre] || { estado: 'cargando' };
+    const txt = v.estado === 'ok' ? `En línea · ${v.ms} ms` : v.estado === 'caido' ? 'Sin respuesta' : v.estado === 'sin' ? 'Sin sitio cargado' : 'Verificando…';
+    document.querySelectorAll(`[data-vivo="${CSS.escape(nombre)}"]`).forEach(el => { el.className = 'mx-vivo ' + v.estado; el.title = `Sitio web: ${txt}`; const s = el.querySelector('span'); if (s) s.textContent = txt; });
+  };
+  let vivoT = null, vivoUlt = null;
+  async function verificarTodos() {
+    const S = SERVICIOS.slice(); S.forEach(s => { if (!VIVO[s.nombre]) pintarVivo(s.nombre); });
+    let i = 0; const trabajar = async () => { while (i < S.length) { const s = S[i++]; VIVO[s.nombre] = await verificarWeb(s.web); pintarVivo(s.nombre); } };
+    await Promise.all([1, 2, 3, 4, 5, 6].map(trabajar));
+    vivoUlt = new Date();
+    document.querySelectorAll('[data-vivo-res]').forEach(el => {
+      const ok = S.filter(s => (VIVO[s.nombre] || {}).estado === 'ok').length, ca = S.filter(s => (VIVO[s.nombre] || {}).estado === 'caido').length;
+      el.innerHTML = `<b style="color:var(--ok)">${ok} en línea</b>${ca ? ` · <b style="color:var(--alta)">${ca} sin respuesta</b>` : ''} · verificado ${vivoUlt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`;
+    });
+    clearTimeout(vivoT); vivoT = setTimeout(verificarTodos, 5 * 60e3);
+  }
+  const vivoHtml = s => `<span class="mx-vivo ${(VIVO[s.nombre] || {}).estado || 'cargando'}" data-vivo="${esc(s.nombre)}"><i></i><span>Verificando…</span></span>`;
+  // Alta de servicios desde la página
+  function abrirAltaServicio(alGuardar, ed) {
+    cerrarFicha();
+    const grupos = [...new Set(SERVICIOS.map(s => s.grupo || 'Otros'))];
+    const m = document.createElement('div');
+    m.className = 'mx mx-modal'; m.id = 'mx-modal'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+    m.innerHTML = `<div class="mx-dialog" style="max-width:620px">
+      <div class="mx-dialog-h"><div style="display:flex;gap:8px;align-items:center">${ico('bank', 'color:var(--primary)')}<b class="mx-h3">${ed ? 'Editar servicio' : 'Agregar servicio a monitorear'}</b></div>
+        <button type="button" class="mx-x" data-cerrar aria-label="Cerrar">${ico('x')}</button></div>
+      <form class="mx-dialog-b" id="sa-form" novalidate>
+        <div class="mx-form">
+          <div><label class="mx-label" for="sa-nom">Nombre <em>*</em></label><input class="mx-input" id="sa-nom" maxlength="60" required placeholder="Ej.: Banco de Corrientes"></div>
+          <div><label class="mx-label" for="sa-gru">Grupo <em>*</em></label><input class="mx-input" id="sa-gru" list="sa-grus" required placeholder="Elegí o escribí uno nuevo">
+            <datalist id="sa-grus">${grupos.map(g => `<option value="${esc(g)}">`).join('')}</datalist></div>
+          <div style="grid-column:1/-1"><label class="mx-label" for="sa-web">Sitio web a verificar</label><input class="mx-input" id="sa-web" inputmode="url" placeholder="www.banco.com.ar o la página de ingreso al homebanking"></div>
+          <div style="grid-column:1/-1"><label class="mx-label" for="sa-cla">Palabras que lo identifican en las noticias</label><input class="mx-input" id="sa-cla" placeholder="banco de corrientes, bancorrientes (separadas por coma)"></div>
+          <div style="grid-column:1/-1"><label class="mx-label" for="sa-dd">Página de Downdetector (opcional)</label><input class="mx-input" id="sa-dd" inputmode="url" placeholder="Si lo dejás vacío, el botón Reportes la busca"></div>
+          <label style="grid-column:1/-1;display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" id="sa-des"> Mostrarlo siempre en el Panorama del día</label>
+        </div>
+        <p class="mx-msg" id="sa-msg" aria-live="polite"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="mx-btn" data-cerrar>Cancelar</button><button type="submit" class="mx-btn primary" id="sa-ok">${ed ? 'Guardar cambios' : 'Agregar'}</button></div>
+      </form></div>`;
+    m.addEventListener('click', ev => { if (ev.target === m || ev.target.closest('[data-cerrar]')) cerrarFicha(); });
+    document.body.appendChild(m); document.body.style.overflow = 'hidden'; m.querySelector('#sa-nom').focus();
+    if (ed) { $('sa-nom').value = ed.nombre; $('sa-gru').value = ed.grupo || ''; $('sa-web').value = ed.web || ''; $('sa-cla').value = (ed.claves || []).join(', ');
+      $('sa-dd').value = ed.dd || ''; $('sa-des').checked = !!ed.destacado; }
+    const url = v => { v = String(v || '').trim(); return !v ? '' : /^https?:\/\//i.test(v) ? v : 'https://' + v; };
+    m.querySelector('#sa-form').addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const nombre = $('sa-nom').value.trim(), grupo = $('sa-gru').value.trim();
+      if (!nombre || !grupo) { $('sa-msg').className = 'mx-msg err'; $('sa-msg').textContent = 'Completá el nombre y el grupo.'; return; }
+      if (SERVICIOS.some(s => low(s.nombre) === low(nombre) && (!ed || s.nombre !== ed.nombre))) { $('sa-msg').className = 'mx-msg err'; $('sa-msg').textContent = 'Ya hay un servicio con ese nombre.'; return; }
+      const claves = $('sa-cla').value.split(',').map(x => x.trim()).filter(Boolean);
+      const nuevo = { nombre, grupo, web: url($('sa-web').value), claves: claves.length ? claves : [nombre], dd: url($('sa-dd').value), destacado: $('sa-des').checked };
+      if (SERV_TABLA) {
+        $('sa-ok').disabled = true; $('sa-msg').className = 'mx-msg'; $('sa-msg').textContent = 'Guardando…';
+        try {
+          const cuerpo = { nombre, grupo, web: nuevo.web || null, claves: nuevo.claves, dd: nuevo.dd || null, destacado: nuevo.destacado };
+          if (ed && ed.id) await sbFetch(`${TSERV}?id=eq.${ed.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(cuerpo) });
+          else { cuerpo.orden = Math.max(0, ...SERVICIOS.filter(x => (x.grupo || 'Otros') === grupo).map(x => x.orden || 0)) + 5 || 1000;
+            await sbFetch(TSERV, { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(cuerpo) }); }
+        } catch (err) {
+          $('sa-ok').disabled = false; $('sa-msg').className = 'mx-msg err';
+          $('sa-msg').textContent = /403|42501|row-level/i.test(err.message) ? 'Solo analistas y administradores pueden modificar la lista.' : /23505|duplicate/i.test(err.message) ? 'Ya hay un servicio con ese nombre.' : 'No se pudo guardar: ' + errBase(err);
+          return;
+        }
+        if (ed && ed.nombre !== nombre) delete VIVO[ed.nombre];
+        cerrarFicha(); await cargarServicios(); alGuardar && alGuardar(nombre); return;
+      }
+      let l = leerExtras(); if (ed) l = l.filter(x => x.nombre !== ed.nombre); l.push(nuevo); grabarLS(EXTRA, JSON.stringify(l));
+      cerrarFicha(); armarServicios(); alGuardar && alGuardar(nombre);
+    });
+  }
+  async function quitarServicio(nombre, alQuitar) {
+    if (!window.confirm(`¿Quitar "${nombre}" de los servicios monitoreados?${SERV_TABLA ? ' Deja de verse para todo el equipo (los hechos registrados no se borran).' : ''}`)) return;
+    if (SERV_TABLA) {
+      const s = SERVICIOS.find(x => x.nombre === nombre);
+      try { await sbFetch(`${TSERV}?id=eq.${s.id}`, { method: 'DELETE' }); } catch (err) { window.alert('No se pudo quitar: ' + errBase(err)); return; }
+      delete VIVO[nombre]; await cargarServicios(); alQuitar && alQuitar(); return;
+    }
+    grabarLS(EXTRA, JSON.stringify(leerExtras().filter(x => x.nombre !== nombre))); delete VIVO[nombre]; armarServicios(); alQuitar && alQuitar();
+  }
+  armarServicios();
   const RX_CAIDA = /ca[ií]da|se cay[oó]|fuera de servicio|interrupci[oó]n|sin servicio|no funciona|demoras?|intermitencia|falla (t[eé]cnica|masiva|general|nacional)|alteraciones en la actividad/;
   // Incidentes de disponibilidad (caídas, fallas, interrupciones) que mencionan a algún servicio de la lista
   function incidentesServicios(N, C) {
@@ -497,7 +611,8 @@
     const caida = h && h.sev === 'alta';
     return `<div class="mx-srv ${h ? (caida ? 'caida' : 'falla') : ''}">
         <div class="mx-srv-h"><b title="${esc(s.nombre)}">${esc(s.nombre)}</b><a class="dd" href="${esc(s._dd)}" target="_blank" rel="noopener" title="Reportes de usuarios en Downdetector">Reportes ↗</a></div>
-        <div class="mx-srv-e"><i></i>${h ? `${caida ? 'Caída registrada' : 'Falla registrada'} · ${esc(fCorta(h.fecha))}` : 'Sin incidentes registrados'}</div>
+        ${vivoHtml(s)}
+        <div class="mx-srv-e">${h ? `<i></i>${caida ? 'Caída registrada' : 'Falla registrada'} · ${esc(fCorta(h.fecha))}` : '<span style="color:var(--mute);font-weight:400">Sin incidentes en 7 días</span>'}</div>
         ${h ? `<div class="mx-srv-t" ${idx != null ? `data-srv="${idx}"` : ''} title="${esc(h.titulo)}">${esc(h.titulo.length > 90 ? h.titulo.slice(0, 88) + '…' : h.titulo)}</div>` : ''}
       </div>`;
   }
@@ -519,6 +634,10 @@
     cont.innerHTML = html;
     $('mx-serv-res').textContent = nInc ? `${plural(nInc, 'servicio')} con incidentes · 7 días` : 'Sin incidentes · 7 días';
     cont.querySelectorAll('[data-srv]').forEach(el => el.addEventListener('click', () => abrirFicha(fichas[+el.dataset.srv])));
+    Object.keys(VIVO).forEach(pintarVivo);
+    if (!pintarServicios.listo) { pintarServicios.listo = true; verificarTodos();
+      const b = $('mx-serv-add'); if (b) b.addEventListener('click', () => abrirAltaServicio(() => pintarServicios(N, C))); }
+    else verificarTodos();
   }
 
   // ---------- Cálculos compartidos ----------
@@ -584,7 +703,7 @@
       $('mx-datos').textContent = `Datos al ${E.ultimaActualizacion || '—'}`;
 
       // Disponibilidad de servicios: hechos confirmados de los últimos 7 días + enlace a Downdetector
-      try { pintarServicios(N, C); } catch (err) { console.error('[Monitor] Servicios:', err); }
+      try { await cargarServicios(); if ($('mx-serv-add') && !puedeEditarServ()) $('mx-serv-add').hidden = true; pintarServicios(N, C); } catch (err) { console.error('[Monitor] Servicios:', err); }
       const pend = C.filter(c => c.decision === 'pendiente').length;
       if (pend) { $('mx-aviso-n').textContent = pend; $('mx-aviso').hidden = false; }
 
@@ -1352,12 +1471,15 @@
     },
 
     async servicios() {
-      const [N, C] = await Promise.all([datos.noticias(), datos.candidatos().catch(() => [])]);
-      const TODOS = incidentesServicios(N, C);
+      const [N, C] = await Promise.all([datos.noticias(), datos.candidatos().catch(() => []), cargarServicios()]);
+      let TODOS = incidentesServicios(N, C);
+      const edita = puedeEditarServ(); if (!edita) $('sv-add').hidden = true;
       const hoy = hoyISO(), diaMs = 864e5;
       const menos = (f, d) => new Date(new Date(f + 'T12:00:00Z').getTime() - d * diaMs).toISOString().slice(0, 10);
       const difDias = (a, b) => Math.round((new Date(a + 'T12:00:00Z') - new Date(b + 'T12:00:00Z')) / diaMs);
       const lunes = f => { const d = new Date(f + 'T12:00:00Z'); return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * diaMs).toISOString().slice(0, 10); };
+      const pintarGrupos = () => { const GR = [...new Set(SERVICIOS.map(s => s.grupo || 'Otros'))];
+        $('sv-grupo').innerHTML = '<button type="button" class="mx-chipbtn on" data-g="">Todos</button>' + GR.map(g => `<button type="button" class="mx-chipbtn" data-g="${esc(g)}">${esc(g)}</button>`).join(''); };
       const GRUPOS = [...new Set(SERVICIOS.map(s => s.grupo || 'Otros'))];
       $('sv-grupo').innerHTML = '<button type="button" class="mx-chipbtn on" data-g="">Todos</button>' + GRUPOS.map(g => `<button type="button" class="mx-chipbtn" data-g="${esc(g)}">${esc(g)}</button>`).join('');
       const primero = TODOS.length ? TODOS[TODOS.length - 1].fecha : hoy;
@@ -1366,6 +1488,16 @@
       function pintar() {
         const desde = dias ? menos(hoy, dias - 1) : primero;
         const S = SERVICIOS.filter(s => !grupo || (s.grupo || 'Otros') === grupo), nombres = new Set(S.map(s => s.nombre));
+        // Estado en vivo
+        let gv = '';
+        $('sv-vivo').innerHTML = S.map(s => { const cab = (s.grupo || 'Otros') !== gv ? `<div class="mx-serv-g">${esc(gv = s.grupo || 'Otros')}</div>` : '';
+          return cab + `<div class="mx-srv vivo"><div class="mx-srv-h"><b title="${esc(s.nombre)}">${esc(s.nombre)}</b>
+            ${s.propio && edita ? `<span class="mx-srv-acc"><button type="button" class="mx-x" data-editar="${esc(s.nombre)}" title="Editar servicio" style="width:22px;height:22px;font-size:13px">✎</button><button type="button" class="mx-x" data-quitar="${esc(s.nombre)}" title="Quitar servicio" style="width:22px;height:22px">${ico('x', 'width:13px;height:13px')}</button></span>` : ''}</div>
+            ${vivoHtml(s)}<div class="mx-small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.web ? esc(s.web.replace(/^https?:\/\//, '')) : '—'}</div></div>`; }).join('');
+        Object.keys(VIVO).forEach(pintarVivo);
+        const rehacer = () => { TODOS = incidentesServicios(N, C); pintarGrupos(); grupo = ''; pintar(); verificarTodos(); };
+        $('sv-vivo').querySelectorAll('[data-quitar]').forEach(b => b.addEventListener('click', () => quitarServicio(b.dataset.quitar, rehacer)));
+        $('sv-vivo').querySelectorAll('[data-editar]').forEach(b => b.addEventListener('click', () => abrirAltaServicio(rehacer, SERVICIOS.find(x => x.nombre === b.dataset.editar))));
         const I = TODOS.filter(h => h.fecha >= desde && h.servicios.some(n => nombres.has(n)));
         const ant = dias ? TODOS.filter(h => h.fecha < desde && h.fecha >= menos(desde, dias) && h.servicios.some(n => nombres.has(n))) : [];
         const porServ = n => I.filter(h => h.servicios.includes(n));
@@ -1424,6 +1556,9 @@
         b.addEventListener('click', () => { dias = +b.dataset.d; grabarLS('mx-sv-per', String(dias)); document.querySelectorAll('#sv-per .mx-chipbtn').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
       });
       $('sv-todos').addEventListener('click', () => { verTodos = !verTodos; pintar(); });
+      $('sv-add').addEventListener('click', () => abrirAltaServicio(() => { TODOS = incidentesServicios(N, C); pintarGrupos(); grupo = ''; pintar(); verificarTodos(); }));
+      $('sv-verif').addEventListener('click', () => { Object.keys(VIVO).forEach(k => delete VIVO[k]); SERVICIOS.forEach(s => pintarVivo(s.nombre)); verificarTodos(); });
+      setTimeout(verificarTodos, 50);
       $('sv-grupo').addEventListener('click', ev => { const b = ev.target.closest('[data-g]'); if (!b) return; grupo = b.dataset.g;
         $('sv-grupo').querySelectorAll('.mx-chipbtn').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
       pintar();
@@ -1438,7 +1573,8 @@
       const ACC = { ingreso: 'Ingreso', usuario_alta: 'Alta de usuario', usuario_edicion: 'Cambio de usuario', usuario_baja: 'Baja de usuario',
         fuente_alta: 'Fuente agregada', fuente_edicion: 'Fuente modificada', fuente_baja: 'Fuente quitada', candidato_alta: 'Evento cargado a mano',
         candidato_aprobado: 'Candidato aprobado', candidato_rechazado: 'Candidato rechazado', candidato_pendiente: 'Vuelto a pendiente',
-        candidato_clasificacion: 'Clasificación modificada', preferencias_notificacion: 'Preferencias de aviso' };
+        candidato_clasificacion: 'Clasificación modificada', preferencias_notificacion: 'Preferencias de aviso',
+        servicio_alta: 'Servicio agregado', servicio_edicion: 'Servicio modificado', servicio_baja: 'Servicio quitado' };
       const yo = (leerSesion() || {}).uid;
       let U = [];
       const msg = (t, tipo) => { $('us-msg').className = 'mx-msg' + (tipo ? ' ' + tipo : ''); $('us-msg').textContent = t; };
