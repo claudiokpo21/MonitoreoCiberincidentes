@@ -234,7 +234,7 @@
   const normC = r => ({ id: r.id || r.codigo, fecha: String(r.fecha || '').slice(0, 10), agregado: r.agregado || '', titulo: r.titulo || '', resumen: r.resumen || '',
     entidad: r.entidad || '', fuente: r.fuente || '', url: r.url || '', naturaleza: r.naturaleza || '', subtipo: r.subtipo || '',
     tipoEvento: r.tipoEvento || r.tipoevento || '—', origen: r.origen || '—', factor: r.factor || '—', canal: r.canal || '', normativa: r.normativa || '',
-    impacto: r.impacto || '—', decision: low(r.decision) || 'pendiente', comentario: r.comentario || '', revisadoPor: r.revisadoPor || r.revisadopor || '',
+    impacto: r.impacto || '—', decision: low(r.decision) || 'pendiente', comentario: leerRND(r.comentario).texto, rnd: leerRND(r.comentario).rnd, revisadoPor: r.revisadoPor || r.revisadopor || '',
     revisadoEn: r.revisadoEn || r.revisadoen || '',
     valorizadoManual: r.valorizado !== undefined && r.valorizado !== null && r.valorizado !== '',
     valorizado: r.valorizado !== undefined && r.valorizado !== null && r.valorizado !== '' ? Number(r.valorizado) : '', moneda: r.moneda || '',
@@ -242,6 +242,10 @@
 
   // Clasificación sugerida por la IA (se conserva aunque el analista la corrija)
   const CAMPOS_CLAS = ['tipoEvento', 'origen', 'factor', 'canal', 'impacto', 'normativa'];
+  // Riesgo no declarado (Sí / No): se guarda al inicio del fundamento, sin cambiar la base -> "[Riesgo no declarado: Sí] texto"
+  const RX_RND = /^\s*\[Riesgo no declarado:\s*(Sí|Si|No)\]\s*/i;
+  const leerRND = com => { const m = String(com || '').match(RX_RND); return m ? { rnd: /^s/i.test(m[1]) ? 'Sí' : 'No', texto: String(com).replace(RX_RND, '') } : { rnd: '', texto: String(com || '') }; };
+  const armarCom = (rnd, texto) => (rnd ? `[Riesgo no declarado: ${rnd}] ` : '') + String(texto || '').trim();
   const iaDe = r => {
     let g = r.sugerenciaIA || r.sugerenciaia;
     if (typeof g === 'string') { try { g = JSON.parse(g); } catch (e) { g = null; } }
@@ -927,6 +931,7 @@
               <div><label class="mx-label" for="c-val">Valorizado (monto del hecho)</label><input class="mx-input mx-mono" id="c-val" inputmode="decimal" value="${c.valorizado === '' ? '' : esc(String(c.valorizado).replace('.', ','))}" placeholder="Ej.: 920000">
                 <div class="mx-small" style="margin-top:4px">${c.montoTexto ? `Detectado en el texto: <b>${esc(c.montoTexto)}</b>${c.valorizadoManual ? ' · valor editado por analista' : ''}` : 'No se detectó un monto en el texto.'}</div></div>
               <div><label class="mx-label" for="c-mon">Moneda</label><select class="mx-select" id="c-mon">${['ARS', 'USD', 'EUR', 'Otra'].map(o => `<option${(c.moneda || 'ARS') === o ? ' selected' : ''}>${o}</option>`).join('')}</select></div>
+              <div><label class="mx-label" for="c-rnd">Riesgo no declarado</label><select class="mx-select" id="c-rnd">${['', 'Sí', 'No'].map(o => `<option value="${o}"${(c.rnd || '') === o ? ' selected' : ''}>${o || '— Sin definir'}</option>`).join('')}</select></div>
             </div>
             <div style="margin-top:18px">
               <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px"><label class="mx-label" for="c-com" style="margin:0">Fundamento del analista</label>
@@ -980,8 +985,9 @@
         let firma = quien();
         if (dec === 'aprobado' || dec === 'rechazado') { if (!firma) firma = pedirAnalista(); if (!firma) { msg.className = 'mx-msg err'; msg.textContent = 'Definí tu nombre de analista para firmar la decisión.'; return; } }
         const cambios = usaSupabase && !c.iaFija ? { sugerenciaIA: c.ia } : {};
+        const rnd = $('c-rnd').value;
         Object.assign(cambios, { tipoEvento: $('c-tipo').value, origen: $('c-orig').value, factor: $('c-fact').value, canal: $('c-canal').value.trim(),
-          impacto: $('c-imp').value, normativa: $('c-norm').value.trim(), comentario: com });
+          impacto: $('c-imp').value, normativa: $('c-norm').value.trim(), comentario: armarCom(rnd, com) });
         const vtxt = $('c-val').value.trim();
         if (vtxt && !isFinite(aNumero(vtxt))) { msg.className = 'mx-msg err'; msg.textContent = 'El valorizado tiene que ser un número (por ejemplo 920000 o 24,5).'; $('c-val').focus(); return; }
         Object.assign(cambios, { valorizado: vtxt ? aNumero(vtxt) : '', moneda: $('c-mon').value });
@@ -992,7 +998,7 @@
         try {
           const firmaBD = await datos.guardarCandidato(c.id, cambios);
           if (firmaBD) Object.assign(cambios, firmaBD);
-          Object.assign(c, cambios, { valorizadoManual: cambios.valorizado !== '' }); if (cambios.sugerenciaIA) c.iaFija = true; delete c.sugerenciaIA;
+          Object.assign(c, cambios, { valorizadoManual: cambios.valorizado !== '', comentario: com, rnd }); if (cambios.sugerenciaIA) c.iaFija = true; delete c.sugerenciaIA;
           actualizarCab();
           if (dec === 'guardar') { pintarDetalle(); $('c-msg').className = 'mx-msg ok'; $('c-msg').textContent = 'Cambios guardados.'; }
           else { selId = null; pintarCola(); const det = $('rv-detalle'); if (det.getBoundingClientRect().top < 0) det.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
@@ -1128,7 +1134,7 @@
               { t: 'Entidad', w: 30 }, { t: 'Fuente', w: 20 }, { t: 'URL', w: 40 }, { t: 'Naturaleza', w: 11 }, { t: 'Subtipo', w: 26 },
               { t: 'IA · Tipo de evento', w: 34 }, { t: 'IA · Origen', w: 10 }, { t: 'IA · Factor', w: 16 }, { t: 'IA · Canal', w: 18 }, { t: 'IA · Impacto', w: 10 }, { t: 'IA · Normativa', w: 22 },
               { t: 'Final · Tipo de evento', w: 34 }, { t: 'Final · Origen', w: 10 }, { t: 'Final · Factor', w: 16 }, { t: 'Final · Canal', w: 18 }, { t: 'Final · Impacto', w: 10 }, { t: 'Final · Normativa', w: 22 },
-              { t: 'Clasificación corregida por analista', w: 14 }, { t: 'Revisado por', w: 20 }, { t: 'Revisado en', w: 17 }, { t: 'Fundamento', w: 50 }];
+              { t: 'Clasificación corregida por analista', w: 14 }, { t: 'Riesgo no declarado', w: 12 }, { t: 'Revisado por', w: 20 }, { t: 'Revisado en', w: 17 }, { t: 'Fundamento', w: 50 }];
             if (conVal) cols.push({ t: 'Monto mencionado', w: 22 }, { t: 'Moneda', w: 8 }, { t: 'Valorizado', w: 16, tipo: 'm' }, { t: 'Valorizado ARS', w: 16, tipo: 'm' }, { t: 'Origen de la valorización', w: 18 });
             const est = c => c.decision === 'pendiente' ? 'Precalificado por IA' : c.decision === 'aprobado' ? 'Clasificado · aprobado' : 'Clasificado · rechazado';
             const filas = L.map(c => {
@@ -1136,7 +1142,7 @@
               const f = [c.id, aFecha(c.fecha), fHora(c.agregado), est(c), c.titulo, c.resumen, c.entidad, c.fuente, c.url, c.naturaleza, c.subtipo]
                 .concat(CAMPOS_CLAS.map(k => ia[k] || ''))
                 .concat(CAMPOS_CLAS.map(k => rev ? (c[k] || '') : ''))
-                .concat([rev ? (modificado(c) ? 'Sí' : 'No') : '', c.revisadoPor, fHora(c.revisadoEn), c.comentario]);
+                .concat([rev ? (modificado(c) ? 'Sí' : 'No') : '', c.rnd || '', c.revisadoPor, fHora(c.revisadoEn), c.comentario]);
               if (conVal) f.push(c.montoTexto || '', c.moneda || '', c.valorizado, aARS(c.valorizado, c.moneda), c.valorizadoManual ? 'Analista' : (c.montoTexto ? 'Detectado en el texto' : ''));
               return f;
             });
@@ -1228,10 +1234,10 @@
           exportar: (L, fmt, conVal, alc) => {
             const cols = [{ t: 'Código', w: 34 }, { t: 'Fecha', w: 11, tipo: 'd' }, { t: 'Título', w: 60 }, { t: 'Resumen', w: 90 }, { t: 'Entidad', w: 30 },
               { t: 'Naturaleza', w: 11 }, { t: 'Subtipo', w: 26 }, { t: 'Tipo de evento', w: 34 }, { t: 'Origen', w: 10 }, { t: 'Factor', w: 16 }, { t: 'Canal', w: 18 },
-              { t: 'Impacto', w: 9 }, { t: 'Normativa', w: 22 }, { t: 'Fuente', w: 20 }, { t: 'URL', w: 40 }, { t: 'Revisado por', w: 20 }, { t: 'Revisado en', w: 17 }, { t: 'Fundamento', w: 50 }];
+              { t: 'Impacto', w: 9 }, { t: 'Normativa', w: 22 }, { t: 'Riesgo no declarado', w: 12 }, { t: 'Fuente', w: 20 }, { t: 'URL', w: 40 }, { t: 'Revisado por', w: 20 }, { t: 'Revisado en', w: 17 }, { t: 'Fundamento', w: 50 }];
             if (conVal) cols.push({ t: 'Monto mencionado', w: 22 }, { t: 'Moneda', w: 8 }, { t: 'Valorizado', w: 16, tipo: 'm' }, { t: 'Valorizado ARS', w: 16, tipo: 'm' }, { t: 'Origen de la valorización', w: 18 });
             const filas = L.map(c => {
-              const f = [c.id, aFecha(c.fecha), c.titulo, c.resumen, c.entidad, c.naturaleza, c.subtipo, c.tipoEvento, c.origen, c.factor, c.canal, c.impacto, c.normativa,
+              const f = [c.id, aFecha(c.fecha), c.titulo, c.resumen, c.entidad, c.naturaleza, c.subtipo, c.tipoEvento, c.origen, c.factor, c.canal, c.impacto, c.normativa, c.rnd || '',
                 c.fuente, c.url, c.revisadoPor, fHora(c.revisadoEn), c.comentario];
               if (conVal) f.push(c.montoTexto || '', c.moneda || '', c.valorizado, aARS(c.valorizado, c.moneda), c.valorizadoManual ? 'Analista' : (c.montoTexto ? 'Detectado en el texto' : ''));
               return f;
