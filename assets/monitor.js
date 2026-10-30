@@ -278,6 +278,9 @@
     if (!r.ok) throw new Error(`${ruta.split('?')[0]}: HTTP ${r.status} ${await r.text()}`);
     return r.status === 204 ? null : r.json();
   }
+  // Funciones de la base (RPC)
+  const sbRpc = (fn, args) => sbFetch(`rpc/${fn}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args || {}) });
+  const errBase = e => { const m = String(e && e.message || e); const j = m.match(/\{.*\}$/s); let t = m; if (j) { try { t = JSON.parse(j[0]).message || m; } catch (x) { /* nada */ } } return t.replace(/^NO_EXISTE:\s*/, ''); };
   async function sbLeer(tabla) {
     let filas = [], desde = 0;
     for (;;) {
@@ -288,8 +291,8 @@
   let perfilProm;
   const perfil = () => perfilProm || (perfilProm = (async () => {
     const ses = leerSesion(); if (!ses) return null;
-    const l = await sbFetch(`${SB.tablas?.perfiles || 'monitor_perfiles'}?select=nombre,rol&user_id=eq.${ses.uid}`);
-    return l[0] ? Object.assign({ email: ses.email }, l[0]) : { nombre: ses.email, rol: 'sin acceso', email: ses.email };
+    const l = await sbFetch(`${SB.tablas?.perfiles || 'monitor_perfiles'}?select=nombre,rol,activo&user_id=eq.${ses.uid}`);
+    return l[0] && l[0].activo !== false ? Object.assign({ email: ses.email }, l[0]) : { nombre: ses.email, rol: 'sin acceso', email: ses.email };
   })());
   function pedirLogin(msj) {
     if ($('mx-login')) return;
@@ -383,7 +386,8 @@
   // Analista (nombre que firma las decisiones)
   let PERFIL = null;
   const analista = () => usaSupabase ? (PERFIL ? PERFIL.nombre : '') : (leerLS('mx-analista') || '');
-  const esAnalista = () => !usaSupabase || (PERFIL && PERFIL.rol === 'analista');
+  const esAnalista = () => !usaSupabase || (PERFIL && (PERFIL.rol === 'analista' || PERFIL.rol === 'admin'));
+  const esAdmin = () => usaSupabase && PERFIL && PERFIL.rol === 'admin';
   function pedirAnalista() {
     if (usaSupabase) { if (window.confirm(`Sesión iniciada como ${PERFIL ? PERFIL.email : ''}.\n¿Querés cerrar la sesión?`)) cerrarSesion(); return analista(); }
     const n = (window.prompt('Nombre y apellido del analista (queda registrado en cada decisión):', analista()) || '').trim();
@@ -394,7 +398,7 @@
     const n = analista();
     if (!$('mx-user-n')) return;
     $('mx-user-n').textContent = n || 'Analista';
-    $('mx-user-r').textContent = usaSupabase ? (PERFIL ? (PERFIL.rol === 'analista' ? 'Analista' : PERFIL.rol === 'lector' ? 'Lector' : 'Sin acceso') : '') : (n ? 'Modo analista' : 'Definir nombre');
+    $('mx-user-r').textContent = usaSupabase ? (PERFIL ? (PERFIL.rol === 'admin' ? 'Administrador' : PERFIL.rol === 'analista' ? 'Analista' : PERFIL.rol === 'lector' ? 'Lector' : 'Sin acceso') : '') : (n ? 'Modo analista' : 'Definir nombre');
     $('mx-avatar').textContent = n ? n.split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase() : '·';
   }
 
@@ -440,6 +444,9 @@
 
   // ---------- Encabezado común ----------
   async function iniciarEncabezado(vista) {
+    const nav = document.querySelector('#mx-cmd .mx-nav .mx-wrap');
+    if (nav && esAdmin() && !nav.querySelector('[data-vista="usuarios"]'))
+      nav.insertAdjacentHTML('beforeend', '<a href="usuarios.html" data-vista="usuarios">Usuarios</a>');
     document.querySelectorAll('#mx-cmd .mx-nav a').forEach(a => a.classList.toggle('on', a.dataset.vista === vista));
     document.querySelectorAll('#mx-cmd .mx-tema button').forEach(b => {
       b.classList.toggle('on', b.dataset.tema === raizHtml.getAttribute('data-theme'));
@@ -1290,6 +1297,80 @@
       pintar();
     },
 
+    async usuarios() {
+      const wrap = $('mx-page').querySelector('.mx-wrap');
+      if (!usaSupabase) { wrap.innerHTML = '<div class="mx-empty">La administración de usuarios funciona solo con la base de Supabase (config.js, fuente: \'supabase\').</div>'; return; }
+      if (!esAdmin()) { wrap.innerHTML = '<div class="mx-empty">Esta sección es solo para usuarios con rol de administrador.</div>'; return; }
+      const ROL = { admin: 'Administrador', analista: 'Analista', lector: 'Lector' };
+      const ROLB = { admin: 'dark', analista: 'info', lector: 'neutral' };
+      const ACC = { ingreso: 'Ingreso', usuario_alta: 'Alta de usuario', usuario_edicion: 'Cambio de usuario', usuario_baja: 'Baja de usuario',
+        fuente_alta: 'Fuente agregada', fuente_edicion: 'Fuente modificada', fuente_baja: 'Fuente quitada', candidato_alta: 'Evento cargado a mano',
+        candidato_aprobado: 'Candidato aprobado', candidato_rechazado: 'Candidato rechazado', candidato_pendiente: 'Vuelto a pendiente',
+        candidato_clasificacion: 'Clasificación modificada', preferencias_notificacion: 'Preferencias de aviso' };
+      const yo = (leerSesion() || {}).uid;
+      let U = [];
+      const msg = (t, tipo) => { $('us-msg').className = 'mx-msg' + (tipo ? ' ' + tipo : ''); $('us-msg').textContent = t; };
+      const limpiar = () => { $('us-form').reset(); $('us-mail').readOnly = false; $('us-ok').textContent = 'Guardar'; $('us-cancel').hidden = true; };
+      async function cargarUsuarios() {
+        U = await sbRpc('monitor_admin_usuarios') || [];
+        $('us-n').textContent = plural(U.length, 'usuario');
+        $('us-k-a').textContent = U.filter(u => u.activo && u.rol === 'admin').length;
+        $('us-k-n').textContent = U.filter(u => u.activo && u.rol === 'analista').length;
+        $('us-k-l').textContent = U.filter(u => u.activo && u.rol === 'lector').length;
+        $('us-k-i').textContent = U.filter(u => !u.activo).length;
+        $('us-tabla').innerHTML = U.map(u => `<tr>
+            <td><b>${esc(u.nombre)}</b>${u.user_id === yo ? ' <span class="mx-small">(vos)</span>' : ''}</td>
+            <td class="nw">${esc(u.email)}</td>
+            <td class="nw"><span class="mx-badge ${ROLB[u.rol] || 'neutral'}">${esc(ROL[u.rol] || u.rol)}</span></td>
+            <td class="nw">${u.activo ? '<span class="mx-badge ok">Activo</span>' : '<span class="mx-badge neutral">Inactivo</span>'}</td>
+            <td class="nw mx-mono" style="color:var(--ink-2)">${esc(u.ultimo_ingreso ? fHora(u.ultimo_ingreso) : 'Nunca')}</td>
+            <td class="nw" style="text-align:right"><button type="button" class="mx-btn sm" data-ed="${esc(u.user_id)}">Editar</button>
+              ${u.user_id === yo ? '' : `<button type="button" class="mx-btn sm danger" data-q="${esc(u.user_id)}">Quitar acceso</button>`}</td></tr>`).join('')
+          || '<tr><td colspan="6" class="mx-empty">Todavía no hay usuarios.</td></tr>';
+      }
+      async function cargarActividad() {
+        const dias = +$('us-act-d').value || 30;
+        const A = await sbRpc('monitor_admin_actividad', { p_desde: new Date(Date.now() - dias * 864e5).toISOString(), p_limite: 500 }) || [];
+        $('us-act-n').textContent = plural(A.length, 'registro');
+        $('us-act').innerHTML = A.map(a => `<tr><td class="nw mx-mono" style="color:var(--ink-2)">${esc(fHora(a.fecha))}</td>
+            <td class="nw">${esc(a.nombre || '—')}</td><td class="nw">${esc(ACC[a.accion] || a.accion)}</td><td class="tit">${esc(a.objeto || '')}</td></tr>`).join('')
+          || '<tr><td colspan="4" class="mx-empty">Sin actividad en el período.</td></tr>';
+      }
+      $('us-form').addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const args = { p_email: $('us-mail').value.trim(), p_nombre: $('us-nom').value.trim(), p_rol: $('us-rol').value, p_activo: $('us-act-e').value === 'true' };
+        $('us-ok').disabled = true; msg('Guardando…');
+        try {
+          await sbRpc('monitor_admin_guardar_usuario', args);
+          msg(`Listo: ${args.p_nombre} quedó como ${ROL[args.p_rol]}${args.p_activo ? '' : ' (inactivo)'}.`, 'ok'); limpiar();
+          await cargarUsuarios(); cargarActividad();
+        } catch (err) {
+          const t = errBase(err);
+          msg(/no hay una cuenta/i.test(t) ? `${t}. Creá primero la cuenta en Supabase > Authentication > Users > Add user (marcá "Auto Confirm User") y volvé a guardar.` : t, 'err');
+        }
+        $('us-ok').disabled = false;
+      });
+      $('us-cancel').addEventListener('click', () => { limpiar(); msg(''); });
+      $('us-tabla').addEventListener('click', async ev => {
+        const be = ev.target.closest('[data-ed]'), bq = ev.target.closest('[data-q]');
+        if (be) {
+          const u = U.find(x => x.user_id === be.dataset.ed);
+          $('us-mail').value = u.email; $('us-mail').readOnly = true; $('us-nom').value = u.nombre; $('us-rol').value = u.rol; $('us-act-e').value = String(u.activo);
+          $('us-ok').textContent = 'Guardar cambios'; $('us-cancel').hidden = false; msg(`Editando a ${u.nombre}.`);
+          $('us-form').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('us-nom').focus();
+        }
+        if (bq) {
+          const u = U.find(x => x.user_id === bq.dataset.q);
+          if (!window.confirm(`¿Quitar el acceso de ${u.nombre} (${u.email})?\nSu cuenta sigue existiendo, pero deja de ver el monitor. Para pausarlo sin borrarlo, editalo y marcalo como Inactivo.`)) return;
+          try { await sbRpc('monitor_admin_quitar_usuario', { p_user: u.user_id }); msg(`Se quitó el acceso de ${u.nombre}.`, 'ok'); await cargarUsuarios(); cargarActividad(); }
+          catch (err) { msg(errBase(err), 'err'); }
+        }
+      });
+      $('us-act-d').addEventListener('change', () => cargarActividad().catch(err => msg(errBase(err), 'err')));
+      await cargarUsuarios();
+      await cargarActividad();
+    },
+
     async metodologia() { /* página estática */ }
   };
 
@@ -1301,6 +1382,7 @@
         if (!PERFIL) { iniciarEncabezado(vista); pedirLogin(); return; }
         if (PERFIL.rol === 'sin acceso') { iniciarEncabezado(vista); pedirLogin(`El usuario ${PERFIL.email} no tiene acceso al monitor. Pedile al administrador que lo habilite.`); borrarSesion(); return; }
       } catch (err) { iniciarEncabezado(vista); pedirLogin(err.sinSesion ? 'Tu sesión venció. Volvé a ingresar.' : 'No se pudo verificar tu acceso.'); return; }
+      sbRpc('monitor_registrar_ingreso').catch(() => { /* no bloquea la página */ });
     }
     iniciarEncabezado(vista);
     if (!vistas[vista]) return;
