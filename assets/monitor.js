@@ -1572,84 +1572,155 @@
 
     async apps() {
       if (!usaSupabase) { $('ap-cards').innerHTML = '<div class="mx-empty">La sección Apps funciona solo con la base de Supabase.</div>'; return; }
-      const TN = { play: 'Google Play', ios: 'App Store' };
+      const TN = { play: 'Android', ios: 'iOS' };
+      const so = t => `<span class="so so-${t}" title="${t === 'play' ? 'Android · Google Play' : 'iOS · App Store'}">${TN[t]}</span>`;
+      // Color e ícono por app (los íconos son los publicados en App Store; si no cargan, se muestran las iniciales)
+      const ESTILO = {
+        'hb-personas': { c: '#2563eb', i: 'https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/36/23/dc/3623dcf7-7a2a-9e77-7447-08c5f317b837/AppIcon-0-0-1x_U007ephone-0-1-0-85-220.png/100x100bb.jpg' },
+        'mi-bpn': { c: '#0d9488', i: 'https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/53/78/7f/53787fe0-64f3-a7d3-fecf-74974746e76b/AppIcon-0-0-1x_U007emarketing-0-7-0-85-220.png/100x100bb.jpg' },
+        'bpn-pagos': { c: '#7c3aed', i: 'https://is1-ssl.mzstatic.com/image/thumb/Purple112/v4/48/4d/b3/484db3bc-8c0e-1dad-ae47-c60175655f81/AppIcon-1x_U007emarketing-0-10-0-0-85-220.png/100x100bb.jpg' },
+        'bpn-inversiones': { c: '#d97706', i: 'https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/5f/e9/98/5fe998bb-43cc-e7cc-b193-bbd7c4da8273/AppIconIbpn-0-0-1x_U007emarketing-0-6-0-85-220.png/100x100bb.jpg' } };
+      const PALETA = ['#2563eb', '#0d9488', '#7c3aed', '#d97706', '#db2777', '#0891b2'];
       let A, L, R;
       try {
         [A, L, R] = await Promise.all([sbFetch('monitor_apps?select=*&activo=eq.true&order=orden.asc'),
-          sbFetch(`monitor_apps_lecturas?select=app_id,tienda,fecha,rating,cantidad,version,actualizada,error&fecha=gte.${new Date(Date.now() - 120 * 864e5).toISOString()}&order=fecha.asc&limit=5000`),
-          sbFetch('monitor_apps_resenas?select=*&order=fecha.desc.nullslast&limit=1000')]);
+          sbFetch(`monitor_apps_lecturas?select=app_id,tienda,fecha,rating,cantidad,version,actualizada,error&fecha=gte.${new Date(Date.now() - 400 * 864e5).toISOString()}&order=fecha.asc&limit=10000`),
+          sbFetch('monitor_apps_resenas?select=*&order=fecha.desc.nullslast&limit=5000')]);
       } catch (err) {
         if (err && err.sinSesion) throw err;
         $('ap-cards').innerHTML = '<div class="mx-empty" style="grid-column:1/-1">Todavía no están creadas las tablas de Apps. Ejecutá sql/2026-10-30_apps.sql en Supabase &gt; SQL Editor.</div>';
-        ['ap-temas', 'ap-evol'].forEach(i => { $(i).innerHTML = ''; }); $('ap-rev').innerHTML = ''; return;
+        ['ap-temas', 'ap-evol', 'ap-meses'].forEach(i => { $(i).innerHTML = ''; }); $('ap-rev').innerHTML = ''; return;
       }
-      const nom = id => (A.find(a => a.id === id) || {}).nombre || id;
+      A.forEach((a, i) => { a.c = (ESTILO[a.id] || {}).c || PALETA[i % PALETA.length]; a.i = (ESTILO[a.id] || {}).i || a.icono || ''; a.ini = a.nombre.replace(/^BPN\s+/i, '').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase(); });
+      const app = id => A.find(a => a.id === id) || { nombre: id, c: 'var(--mute)', i: '', ini: '?' };
+      const icono = (a, sm) => a.i ? `<img class="ap-ico${sm ? ' sm' : ''}" src="${esc(a.i)}" alt="" loading="lazy" style="--ap:${a.c}" onerror="this.outerHTML='<span class=&quot;ap-ico${sm ? ' sm' : ''}&quot; style=&quot;--ap:${a.c}&quot;>${esc(a.ini)}</span>'">`
+        : `<span class="ap-ico${sm ? ' sm' : ''}" style="--ap:${a.c}">${esc(a.ini)}</span>`;
       const col = r => r == null ? 'var(--mute)' : r < 3 ? 'var(--alta)' : r < 4 ? 'var(--media)' : 'var(--ok)';
       const est = r => { const f = Math.round(r); return `<span class="estr" style="color:${col(r)}">${'★'.repeat(f)}<span style="color:var(--line-2)">${'★'.repeat(5 - f)}</span></span>`; };
       const num = r => Number(r).toFixed(1).replace('.', ',');
-      const ultima = (app, t) => L.filter(x => x.app_id === app && x.tienda === t && x.rating != null).slice(-1)[0];
-      const hace = (app, t, dias) => { const lim = new Date(Date.now() - dias * 864e5).toISOString(); return L.filter(x => x.app_id === app && x.tienda === t && x.rating != null && x.fecha <= lim).slice(-1)[0]; };
+      const ultima = (id, t) => L.filter(x => x.app_id === id && x.tienda === t && x.rating != null).slice(-1)[0];
+      const hace = (id, t, dias) => { const lim = new Date(Date.now() - dias * 864e5).toISOString(); return L.filter(x => x.app_id === id && x.tienda === t && x.rating != null && x.fecha <= lim).slice(-1)[0]; };
       const ult = L.slice(-1)[0];
       $('ap-ult').textContent = `Última lectura · ${ult ? fHora(ult.fecha) : 'todavía no hubo'}`;
       $('ap-app').innerHTML = '<option value="">Todas las apps</option>' + A.map(a => `<option value="${esc(a.id)}">${esc(a.nombre)}</option>`).join('');
-      let tienda = '', estr = '', appSel = '';
-      const desde90 = new Date(Date.now() - 90 * 864e5).toISOString(), desde7 = new Date(Date.now() - 7 * 864e5).toISOString(), desde1 = new Date(Date.now() - 864e5).toISOString();
+      // Período: rangos fijos + años y meses que tienen opiniones (se arma solo a medida que llegan reclamos)
+      const MES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+      const ym = r => r.fecha ? fechaART(r.fecha).slice(0, 7) : '';
+      const cuenta = {}; R.forEach(r => { const k = ym(r); if (k) { cuenta[k] = (cuenta[k] || 0) + 1; cuenta[k.slice(0, 4)] = (cuenta[k.slice(0, 4)] || 0) + 1; } });
+      const anios = [...new Set(Object.keys(cuenta).filter(k => k.length === 4))].sort().reverse();
+      $('ap-per').innerHTML = '<optgroup label="Rangos"><option value="d30">Últimos 30 días</option><option value="d90" selected>Últimos 90 días</option><option value="d365">Últimos 12 meses</option><option value="todo">Todo el historial</option></optgroup>'
+        + anios.map(y => `<optgroup label="${y}"><option value="${y}">Año ${y} completo (${cuenta[y]})</option>${Object.keys(cuenta).filter(k => k.length === 7 && k.startsWith(y)).sort().reverse()
+          .map(k => `<option value="${k}">${MES[+k.slice(5) - 1]} ${y} (${cuenta[k]})</option>`).join('')}</optgroup>`).join('');
+      let tienda = '', estr = '', appSel = '', pag = 1, imprimiendo = false, ULT = { vis: [], RP: [], M: [] }, per = leerLS('mx-ap-per') || 'd90';
+      if (![...$('ap-per').options].some(o => o.value === per)) per = 'd90';
+      $('ap-per').value = per;
+      const enPer = r => { if (per === 'todo') return true; if (per[0] === 'd') return r.fecha && r.fecha >= new Date(Date.now() - +per.slice(1) * 864e5).toISOString(); return ym(r).startsWith(per); };
+      const perTxt = () => $('ap-per').selectedOptions[0].textContent.replace(/\s*\(\d+\)$/, '').replace(/^Últimos/, 'últimos').replace(/^Último/, 'último').replace(/^Todo el historial/, 'todo el historial');
+      const desde7 = new Date(Date.now() - 7 * 864e5).toISOString(), desde1 = new Date(Date.now() - 864e5).toISOString();
+      const modo = l => { const c = {}; l.forEach(x => { c[x || 'General'] = (c[x || 'General'] || 0) + 1; }); const o = Object.entries(c).sort((a, b) => (b[0] !== 'General') - (a[0] !== 'General') || b[1] - a[1]); return o.length ? o[0][0] : ''; };
       function pintar() {
         const TS = tienda ? [tienda] : ['play', 'ios'];
-        // Alertas: muchas de 1-2 estrellas en 24 h, caída de calificación, temas sensibles
+        // Alertas (siempre sobre lo reciente)
         const al = [];
         A.forEach(a => TS.forEach(t => {
           const malas = R.filter(r => r.app_id === a.id && r.tienda === t && r.fecha >= desde1 && r.estrellas && r.estrellas <= 2);
-          if (malas.length >= 3) al.push(`<b>${esc(a.nombre)} · ${TN[t]}:</b> ${malas.length} opiniones de 1–2 ★ en las últimas 24 horas (tema principal: ${esc(modo(malas.map(m => m.tema)))}).`);
+          if (malas.length >= 3) al.push([a, t, `${malas.length} opiniones de 1–2 ★ en las últimas 24 horas (tema principal: ${esc(modo(malas.map(m => m.tema)))}).`]);
           const u = ultima(a.id, t), h = hace(a.id, t, 7);
-          if (u && h && u.rating - h.rating <= -0.2) al.push(`<b>${esc(a.nombre)} · ${TN[t]}:</b> la calificación bajó de ${num(h.rating)} a ${num(u.rating)} en 7 días.`);
+          if (u && h && u.rating - h.rating <= -0.2) al.push([a, t, `la calificación bajó de ${num(h.rating)} a ${num(u.rating)} en 7 días.`]);
           const sens = R.filter(r => r.app_id === a.id && r.tienda === t && r.fecha >= desde7 && /Fraude/.test(r.tema || ''));
-          if (sens.length) al.push(`<b>${esc(a.nombre)} · ${TN[t]}:</b> ${plural(sens.length, 'opinión menciona', 'opiniones mencionan')} posible fraude o robo en los últimos 7 días.`);
+          if (sens.length) al.push([a, t, `${plural(sens.length, 'opinión menciona', 'opiniones mencionan')} posible fraude o robo en los últimos 7 días.`]);
         }));
-        $('ap-alertas').innerHTML = al.map(t => `<div class="mx-nota" style="border-left:4px solid var(--alta)">${ico('alert', 'color:var(--alta)')}<div>${t}</div></div>`).join('');
+        $('ap-alertas').innerHTML = al.map(([a, t, x]) => `<div class="mx-nota" style="border-left:4px solid var(--alta);align-items:center">${icono(a, true)}<div><b>${esc(a.nombre)}</b> ${so(t)} ${x}</div></div>`).join('');
         // Tarjetas
-        const fila = (lbl, a, t) => { const u = ultima(a.id, t), h = hace(a.id, t, 30);
+        const fila = (a, t) => { const u = ultima(a.id, t), h = hace(a.id, t, 30);
           const d = u && h ? Math.round((u.rating - h.rating) * 10) / 10 : null;
-          return `<div class="st"><span>${lbl}</span>${u ? `<span>${est(u.rating)} <b style="color:${col(u.rating)}">${num(u.rating)}</b><small>(${Number(u.cantidad || 0).toLocaleString('es-AR')})</small>${d ? `<small style="color:${d > 0 ? 'var(--ok)' : 'var(--alta)'}">${d > 0 ? '▲' : '▼'} ${num(Math.abs(d))}</small>` : ''}</span>` : '<small>Sin calificaciones suficientes</small>'}</div>`; };
+          return `<div class="st">${so(t)}${u ? `<span>${est(u.rating)} <b style="color:${col(u.rating)}">${num(u.rating)}</b><small>(${Number(u.cantidad || 0).toLocaleString('es-AR')})</small>${d ? `<small style="color:${d > 0 ? 'var(--ok)' : 'var(--alta)'}">${d > 0 ? '▲' : '▼'} ${num(Math.abs(d))}</small>` : ''}</span>` : '<small>Sin calificaciones suficientes</small>'}</div>`; };
         $('ap-cards').innerHTML = A.map(a => {
-          const rs = R.filter(r => r.app_id === a.id && TS.includes(r.tienda) && r.fecha >= desde90);
-          const t = rs.length ? modo(rs.map(r => r.tema)) : '';
-          const vers = TS.map(x => { const u = L.filter(y => y.app_id === a.id && y.tienda === x && y.version).slice(-1)[0]; return u ? `${x === 'play' ? 'Play' : 'iOS'} ${esc(u.version)}` : ''; }).filter(Boolean).join(' · ');
-          return `<div class="ap"><h3>${esc(a.nombre)}</h3>${TS.map(x => fila(TN[x], a, x)).join('')}
-            <div class="mx-small">${vers ? 'Versión: ' + vers + '<br>' : ''}Opiniones en 90 días: ${rs.length}${rs.length ? ` · 1–2 ★: ${rs.filter(r => r.estrellas && r.estrellas <= 2).length}` : ''}</div>
-            ${t ? `<div><span class="mx-badge ${t === 'General' ? 'neutral' : 'media'}">Tema principal: ${esc(t)}</span></div>` : '<div><span class="mx-badge neutral">Sin opiniones recientes</span></div>'}</div>`; }).join('');
-        // Temas
-        const R90 = R.filter(r => r.fecha >= desde90 && TS.includes(r.tienda) && (!appSel || r.app_id === appSel));
-        const cnt = {}; R90.forEach(r => { cnt[r.tema || 'General'] = (cnt[r.tema || 'General'] || 0) + 1; });
+          const rs = R.filter(r => r.app_id === a.id && TS.includes(r.tienda) && enPer(r));
+          const t = rs.length ? modo(rs.map(r => r.tema)) : '', conE = rs.filter(r => r.estrellas);
+          const prom = conE.length ? conE.reduce((s, r) => s + r.estrellas, 0) / conE.length : null;
+          const vers = TS.map(x => { const u = L.filter(y => y.app_id === a.id && y.tienda === x && y.version).slice(-1)[0]; return u ? `${TN[x]} ${esc(u.version)}` : ''; }).filter(Boolean).join(' · ');
+          return `<div class="ap" style="--ap:${a.c}"><div class="ap-h">${icono(a)}<h3>${esc(a.nombre)}</h3></div>${TS.map(x => fila(a, x)).join('')}
+            <div class="mx-small">${vers ? 'Versión: ' + vers + '<br>' : ''}<b>${plural(rs.length, 'opinión', 'opiniones')}</b> en ${esc(perTxt())}${prom != null ? ` · promedio <b style="color:${col(prom)}">${num(prom)} ★</b>` : ''}${rs.length ? ` · 1–2 ★: ${rs.filter(r => r.estrellas && r.estrellas <= 2).length}` : ''}</div>
+            ${t ? `<div><span class="mx-badge ${t === 'General' ? 'neutral' : 'media'}">Tema principal: ${esc(t)}</span></div>` : '<div><span class="mx-badge neutral">Sin opiniones en el período</span></div>'}</div>`; }).join('');
+        // Opiniones por mes (últimos 18 meses con datos), apiladas por estrellas
+        const RB = R.filter(r => TS.includes(r.tienda) && (!appSel || r.app_id === appSel) && ym(r));
+        const meses = []; { const hoy = hoyISO(); let y = +hoy.slice(0, 4), m = +hoy.slice(5, 7); for (let k = 0; k < 18; k++) { meses.unshift(`${y}-${String(m).padStart(2, '0')}`); if (--m === 0) { m = 12; y--; } } }
+        const M = meses.map(k => { const l = RB.filter(r => ym(r) === k); return { k, n: l.length, b: l.filter(r => r.estrellas && r.estrellas <= 2).length, m: l.filter(r => r.estrellas === 3).length, a: l.filter(r => r.estrellas >= 4).length }; });
+        const top = Math.max(1, ...M.map(x => x.n)), H = 110;
+        $('ap-meses').innerHTML = `<div class="ap-meses">${M.map(x => `<button type="button" class="ap-mes${per === x.k ? ' on' : ''}" data-mes="${x.k}" title="${MES[+x.k.slice(5) - 1]} ${x.k.slice(0, 4)}: ${x.n} opiniones · ${x.b} de 1–2 ★">
+            ${x.n ? `<b>${x.n}</b>` : ''}<span class="pila" style="height:${Math.max(x.n ? 3 : 0, x.n / top * H)}px">${[['b', 'var(--alta)'], ['m', 'var(--media)'], ['a', 'var(--ok)']].map(([k, c]) => x[k] ? `<i style="height:${x[k] / x.n * 100}%;background:${c}"></i>` : '').join('')}${x.n - x.b - x.m - x.a > 0 ? `<i style="height:${(x.n - x.b - x.m - x.a) / x.n * 100}%;background:var(--line-2)"></i>` : ''}</span>
+            <span>${MES[+x.k.slice(5) - 1].slice(0, 3)} ${x.k.slice(2, 4)}</span></button>`).join('')}</div>`;
+        $('ap-meses').querySelectorAll('[data-mes]').forEach(b => b.addEventListener('click', () => {
+          pag = 1; const k = b.dataset.mes; per = per === k ? 'd90' : k;
+          if (![...$('ap-per').options].some(o => o.value === per)) $('ap-per').insertAdjacentHTML('beforeend', `<option value="${k}">${MES[+k.slice(5) - 1]} ${k.slice(0, 4)} (0)</option>`);
+          $('ap-per').value = per; grabarLS('mx-ap-per', per); pintar(); }));
+        // Temas del período
+        const RP = R.filter(r => enPer(r) && TS.includes(r.tienda) && (!appSel || r.app_id === appSel));
+        const cnt = {}; RP.forEach(r => { cnt[r.tema || 'General'] = (cnt[r.tema || 'General'] || 0) + 1; });
         const T = Object.entries(cnt).sort((a, b) => b[1] - a[1]), mx = Math.max(1, ...T.map(t => t[1]));
-        $('ap-temas-n').textContent = plural(R90.length, 'opinión', 'opiniones');
-        $('ap-temas').innerHTML = T.map(([k, n]) => `<div class="tm"><span>${esc(k)}</span><span class="b"><i style="width:${n / mx * 100}%;background:${k === 'General' ? 'var(--line-2)' : /Fraude|Token|Ingreso/.test(k) ? 'var(--alta)' : 'var(--media)'}"></i></span><b class="mx-mono">${n}</b></div>`).join('') || '<div class="mx-empty">Sin opiniones en los últimos 90 días.</div>';
-        // Evolución (calificación diaria por app y tienda)
+        $('ap-temas-n').textContent = `${plural(RP.length, 'opinión', 'opiniones')} · ${perTxt()}`;
+        $('ap-temas').innerHTML = T.map(([k, n]) => `<div class="tm"><span>${esc(k)}</span><span class="b"><i style="width:${n / mx * 100}%;background:${k === 'General' ? 'var(--line-2)' : /Fraude|Token|Ingreso/.test(k) ? 'var(--alta)' : 'var(--media)'}"></i></span><b class="mx-mono">${n}</b></div>`).join('') || '<div class="mx-empty">Sin opiniones en el período.</div>';
+        // Evolución de la calificación (color de cada app; línea llena Android, punteada iOS)
         const dias = [...new Set(L.map(x => fechaART(x.fecha)))].sort();
         if (dias.length < 2) $('ap-evol').innerHTML = `<div class="mx-empty" style="padding:30px 10px">El gráfico se arma con las lecturas automáticas (cada 6 horas).${dias.length ? ' Ya hay datos de 1 día; desde mañana se ve la línea.' : ''}</div>`;
-        else $('ap-evol').innerHTML = '<div class="ap-graf">' + A.flatMap(a => TS.map(t => {
+        else $('ap-evol').innerHTML = '<div class="ap-graf">' + A.filter(a => !appSel || a.id === appSel).flatMap(a => TS.map(t => {
           const pts = dias.map(d => { const l = L.filter(x => x.app_id === a.id && x.tienda === t && x.rating != null && fechaART(x.fecha) === d).slice(-1)[0]; return l ? +l.rating : null; });
           const v = pts.filter(x => x != null); if (!v.length) return '';
-          const mn = Math.min(...v) - .2, mxx = Math.max(...v) + .2, W = 300, H = 34, x = i => i / (dias.length - 1) * W, y = r => H - (r - mn) / (mxx - mn) * H;
+          const mn = Math.min(...v) - .2, mxx = Math.max(...v) + .2, W = 300, Hh = 34, x = i => i / (dias.length - 1) * W, y = r => Hh - (r - mn) / (mxx - mn) * Hh;
           const dd = pts.map((r, i) => r == null ? null : `${x(i).toFixed(1)},${y(r).toFixed(1)}`).filter(Boolean).join(' L');
-          return `<span>${esc(a.nombre)} <span class="mx-small">${t === 'play' ? 'Play' : 'iOS'}</span></span><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="M${dd}" fill="none" stroke="${col(v[v.length - 1])}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg><b class="mx-mono" style="color:${col(v[v.length - 1])}">${num(v[v.length - 1])}</b>`;
+          return `<span class="ap-app">${icono(a, true)}<span>${esc(a.nombre)} ${so(t)}</span></span><svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none"><path d="M${dd}" fill="none" stroke="${a.c}" stroke-width="2.2" ${t === 'ios' ? 'stroke-dasharray="5 4"' : ''} vector-effect="non-scaling-stroke"/></svg><b class="mx-mono" style="color:${col(v[v.length - 1])}">${num(v[v.length - 1])}</b>`;
         })).join('') + '</div>';
-        // Opiniones
-        const vis = R.filter(r => TS.includes(r.tienda) && (!appSel || r.app_id === appSel) &&
-          (!estr || (estr === 'r' ? !!r.respuesta : estr.includes(String(r.estrellas)) || (estr === '12' && r.estrellas <= 2) || (estr === '45' && r.estrellas >= 4))));
-        $('ap-rev').innerHTML = vis.slice(0, 200).map(r => `<tr><td class="nw mx-mono" style="color:var(--ink-2)">${esc(r.fecha ? fLarga(fechaART(r.fecha)) : '—')}</td>
-            <td class="nw"><b>${esc(nom(r.app_id))}</b>${r.version ? `<div class="mx-small">v${esc(r.version)}</div>` : ''}</td><td class="nw"><span class="mx-chip-mono">${TN[r.tienda]}</span></td>
+        // Opiniones del período
+        const vis = RP.filter(r => !estr || (estr === 'r' ? !!r.respuesta : estr === '12' ? r.estrellas && r.estrellas <= 2 : estr === '45' ? r.estrellas >= 4 : r.estrellas === 3));
+        ULT = { vis, RP, M, TS };
+        const ini = (pag - 1) * 20; if (ini >= vis.length && pag > 1) { pag = 1; return pintar(); }
+        $('ap-rev').innerHTML = (imprimiendo ? vis : vis.slice(ini, ini + 20)).map(r => { const a = app(r.app_id); return `<tr style="box-shadow:inset 3px 0 0 ${a.c}"><td class="nw mx-mono" style="color:var(--ink-2)">${esc(r.fecha ? fLarga(fechaART(r.fecha)) : '—')}</td>
+            <td class="nw"><span class="ap-app">${icono(a, true)}<span><b>${esc(a.nombre)}</b>${r.version ? `<div class="mx-small">v${esc(r.version)}</div>` : ''}</span></span></td><td class="nw">${so(r.tienda)}</td>
             <td class="nw">${r.estrellas ? est(r.estrellas) : '—'}</td><td class="nw"><span class="mx-badge ${r.tema === 'General' ? 'neutral' : /Fraude|Token|Ingreso/.test(r.tema || '') ? 'alta' : 'media'}">${esc(r.tema || 'General')}</span></td>
             <td style="min-width:320px">${r.titulo ? `<b>${esc(r.titulo)}</b> · ` : ''}${esc(r.texto || '')}${r.respuesta ? `<div class="mx-small" style="margin-top:6px;border-left:3px solid var(--primary);padding-left:8px"><b>Respuesta del banco:</b> ${esc(r.respuesta)}</div>` : ''}
-            <div class="mx-small" style="margin-top:4px">${esc(r.autor || '')}</div></td></tr>`).join('')
-          || `<tr><td colspan="6" class="mx-empty">${R.length ? 'No hay opiniones con estos filtros.' : 'Todavía no se leyeron opiniones. Se cargan en la próxima lectura automática o con "Actualizar ahora".'}</td></tr>`;
-        $('ap-exp').onclick = () => csv('opiniones-apps', ['Fecha', 'App', 'Tienda', 'Estrellas', 'Tema', 'Título', 'Opinión', 'Versión', 'Autor', 'Respuesta del banco'],
-          vis.map(r => [r.fecha ? fechaART(r.fecha) : '', nom(r.app_id), TN[r.tienda], r.estrellas || '', r.tema || '', r.titulo || '', r.texto || '', r.version || '', r.autor || '', r.respuesta || '']));
+            <div class="mx-small" style="margin-top:4px">${esc(r.autor || '')}</div></td></tr>`; }).join('')
+          || `<tr><td colspan="6" class="mx-empty">${R.length ? 'No hay opiniones con estos filtros en el período.' : 'Todavía no se leyeron opiniones. Se cargan en la próxima lectura automática o con "Actualizar ahora".'}</td></tr>`;
+        if (vis.length > 20 && !imprimiendo) paginar($('ap-pag'), vis.length, 20, pag, n => { pag = n; pintar(); $('ap-rev').closest('section').scrollIntoView({ block: 'start', behavior: 'smooth' }); }); else $('ap-pag').innerHTML = '';
+        $('ap-exp').onclick = () => csv('opiniones-apps', ['Fecha', 'App', 'Sistema', 'Estrellas', 'Tema', 'Título', 'Opinión', 'Versión', 'Autor', 'Respuesta del banco'],
+          vis.map(r => [r.fecha ? fechaART(r.fecha) : '', app(r.app_id).nombre, r.tienda === 'play' ? 'Android (Google Play)' : 'iOS (App Store)', r.estrellas || '', r.tema || '', r.titulo || '', r.texto || '', r.version || '', r.autor || '', r.respuesta || '']));
       }
-      const modo = l => { const c = {}; l.forEach(x => { c[x || 'General'] = (c[x || 'General'] || 0) + 1; }); const o = Object.entries(c).sort((a, b) => (b[0] !== 'General') - (a[0] !== 'General') || b[1] - a[1]); return o.length ? o[0][0] : ''; };
-      $('ap-tienda').addEventListener('click', ev => { const b = ev.target.closest('[data-t]'); if (!b) return; tienda = b.dataset.t; $('ap-tienda').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
-      $('ap-est').addEventListener('click', ev => { const b = ev.target.closest('[data-e]'); if (!b) return; estr = b.dataset.e; $('ap-est').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
-      $('ap-app').addEventListener('change', () => { appSel = $('ap-app').value; pintar(); });
+      // Exportar a Excel: resumen por app, opiniones del período (con los filtros), opiniones por mes y temas
+      const descTxt = () => [`Período: ${perTxt()}`, `Sistema: ${tienda ? TN[tienda] : 'Android e iOS'}`, `App: ${appSel ? app(appSel).nombre : 'todas'}`,
+        `Estrellas: ${{ '': 'todas', '12': '1–2', '3': '3', '45': '4–5', r: 'con respuesta del banco' }[estr]}`].join(' · ');
+      $('ap-xls').addEventListener('click', async () => {
+        const b = $('ap-xls'); b.disabled = true;
+        try {
+          await cargarXLSX(); const X = window.XLSX, wb = X.utils.book_new();
+          const hoja = (nombre, filas, anchos, filtro) => { const ws = X.utils.aoa_to_sheet(filas, { cellDates: true }); ws['!cols'] = anchos.map(w => ({ wch: w }));
+            if (filtro) ws['!autofilter'] = { ref: ws['!ref'] }; X.utils.book_append_sheet(wb, ws, nombre); return ws; };
+          const res = [['App', 'Sistema', 'Calificación actual', 'Cantidad de calificaciones', 'Variación 30 días', 'Versión', `Opiniones (${perTxt()})`, 'Promedio de estrellas del período', 'Opiniones de 1–2 ★', 'Tema principal']];
+          A.forEach(a => ULT.TS.forEach(t => { const u = ultima(a.id, t), h = hace(a.id, t, 30), v = L.filter(y => y.app_id === a.id && y.tienda === t && y.version).slice(-1)[0];
+            const rs = R.filter(r => r.app_id === a.id && r.tienda === t && enPer(r)), ce = rs.filter(r => r.estrellas);
+            res.push([a.nombre, t === 'play' ? 'Android' : 'iOS', u ? Math.round(u.rating * 100) / 100 : '', u ? u.cantidad || 0 : '', u && h ? Math.round((u.rating - h.rating) * 10) / 10 : '',
+              v ? v.version : '', rs.length, ce.length ? Math.round(ce.reduce((s, r) => s + r.estrellas, 0) / ce.length * 10) / 10 : '', rs.filter(r => r.estrellas && r.estrellas <= 2).length, rs.length ? modo(rs.map(r => r.tema)) : '']); }));
+          hoja('Resumen', res, [28, 9, 12, 14, 12, 12, 16, 16, 12, 22], true);
+          hoja('Opiniones', [['Fecha', 'App', 'Sistema', 'Estrellas', 'Tema', 'Título', 'Opinión', 'Versión', 'Autor', 'Respuesta del banco', 'Fecha de la respuesta']]
+            .concat(ULT.vis.map(r => [r.fecha ? new Date(fechaART(r.fecha) + 'T12:00:00') : '', app(r.app_id).nombre, r.tienda === 'play' ? 'Android' : 'iOS', r.estrellas || '', r.tema || '', r.titulo || '', r.texto || '',
+              r.version || '', r.autor || '', r.respuesta || '', r.respuesta_fecha ? new Date(fechaART(r.respuesta_fecha) + 'T12:00:00') : ''])), [11, 26, 9, 9, 18, 26, 80, 10, 18, 50, 12], true);
+          hoja('Por mes', [['Mes', 'Opiniones', '1–2 ★', '3 ★', '4–5 ★']].concat(ULT.M.filter(x => x.n).map(x => [`${MES[+x.k.slice(5) - 1]} ${x.k.slice(0, 4)}`, x.n, x.b, x.m, x.a])), [16, 10, 8, 8, 8]);
+          const ct = {}; ULT.RP.forEach(r => { ct[r.tema || 'General'] = (ct[r.tema || 'General'] || 0) + 1; });
+          hoja('Temas', [['Tema', 'Opiniones', '% del período']].concat(Object.entries(ct).sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, n, Math.round(n / ULT.RP.length * 1000) / 10])), [26, 10, 12]);
+          hoja('Información', [['Monitor de Riesgo · Apps del banco'], [], ['Generado', fHora(new Date().toISOString())], ['Filtros', descTxt()], ['Última lectura de las tiendas', ult ? fHora(ult.fecha) : '—'], [],
+            ['Fuente: Google Play y App Store (Argentina). Las opiniones se clasifican por tema con palabras clave.']], [30, 80]);
+          X.writeFile(wb, `apps-opiniones-${per}-${hoyISO()}.xlsx`, { compression: true });
+        } catch (err) { window.alert(err.message); }
+        b.disabled = false;
+      });
+      // Imprimir / PDF: muestra todas las opiniones del período, no solo la página actual
+      const prepImp = () => { imprimiendo = true; $('ap-print-t').textContent = `${descTxt()} · Generado ${fHora(new Date().toISOString())}`; pintar(); };
+      const finImp = () => { if (!imprimiendo) return; imprimiendo = false; pintar(); };
+      window.addEventListener('beforeprint', prepImp); window.addEventListener('afterprint', finImp);
+      $('ap-imp').addEventListener('click', () => { prepImp(); setTimeout(() => window.print(), 50); });
+      $('ap-per').addEventListener('change', () => { pag = 1; per = $('ap-per').value; grabarLS('mx-ap-per', per); pintar(); });
+      $('ap-tienda').addEventListener('click', ev => { const b = ev.target.closest('[data-t]'); if (!b) return; pag = 1; tienda = b.dataset.t; $('ap-tienda').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
+      $('ap-est').addEventListener('click', ev => { const b = ev.target.closest('[data-e]'); if (!b) return; pag = 1; estr = b.dataset.e; $('ap-est').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
+      $('ap-app').addEventListener('change', () => { pag = 1; appSel = $('ap-app').value; pintar(); });
       $('ap-act').addEventListener('click', async () => {
         const b = $('ap-act'); b.disabled = true; b.textContent = 'Leyendo las tiendas…';
         try {
@@ -1660,6 +1731,321 @@
         } catch (err) { b.disabled = false; b.textContent = 'Actualizar ahora'; window.alert('No se pudo leer las tiendas: ' + err.message); }
       });
       pintar();
+    },
+
+    async reputacion() {
+      if (!usaSupabase) { $('rp-kpis').innerHTML = '<div class="mx-empty">La sección Reputación funciona solo con la base de Supabase.</div>'; return; }
+      const PRI = { critica: 'Crítica', alta: 'Alta', media: 'Media', baja: 'Baja' }, PRK = { critica: 0, alta: 1, media: 2, baja: 3 };
+      const EST = { nueva: 'Nueva', en_verificacion: 'En verificación', seguimiento: 'En seguimiento', confirmada: 'Confirmada', descartada: 'Descartada' };
+      const NAT = { no_verificado: 'Contenido no verificado', publicacion: 'Publicación periodística', denuncia: 'Denuncia', sospecha: 'Sospecha', comunicado_oficial: 'Comunicado oficial', hecho_confirmado: 'Hecho confirmado' };
+      const ORG = { gdelt: 'GDELT', gnews: 'Google News', rss: 'RSS de medios', manual: 'Carga manual', importado: 'Importado' };
+      const RUN = { ok: 'Correcta', sin_resultados: 'Sin resultados', error: 'Error', limitado: 'Limitada (429)', omitida: 'Omitida' };
+      const TIPOF = { oficial: 'Oficial', medio_nacional: 'Medio nacional', medio_regional: 'Medio regional', medio_internacional: 'Medio internacional', especializado: 'Especializado', blog_foro: 'Blog o foro', desconocido: 'Desconocido' };
+      let AL, CAT, CON, RUNS, FU, CFG;
+      const cargar = async () => {
+        [AL, CAT, CON, RUNS, FU, CFG] = await Promise.all([
+          sbFetch('monitor_rep_alertas?select=*&order=detectado.desc&limit=5000'), sbFetch('monitor_rep_categorias?select=*&order=orden.asc'),
+          sbFetch('monitor_rep_consultas?select=*&order=id.asc'), sbFetch('monitor_rep_corridas?select=*&order=inicio.desc&limit=400'),
+          sbFetch('monitor_rep_fuentes?select=*&order=dominio.asc'), sbFetch('monitor_rep_config?select=*')]);
+      };
+      try { await cargar(); }
+      catch (err) {
+        if (err && err.sinSesion) throw err;
+        $('rp-kpis').innerHTML = '<div class="mx-empty" style="grid-column:1/-1">Todavía no están creadas las tablas de Reputación. Ejecutá sql/2026-10-31_reputacion.sql en Supabase &gt; SQL Editor.</div>'; return;
+      }
+      const ENT = () => (CFG.find(c => c.id === 'entidad') || {}).valor || {};
+      const PRC = () => (CFG.find(c => c.id === 'prioridad') || {}).valor || {};
+      $('rp-ent').textContent = ENT().nombre || 'Entidad monitoreada';
+      const catN = id => (CAT.find(c => c.id === id) || {}).nombre || id || '—';
+      const pri = a => a.prioridad_analista || a.prioridad;
+      const prB = a => `<span class="pr ${pri(a)}${a.prioridad_analista ? ' analista' : ''}" title="${a.prioridad_analista ? 'Prioridad fijada por un analista' : `Prioridad preliminar automática · puntaje ${a.puntaje ?? '—'}`}">${PRI[pri(a)]}${a.prioridad_analista ? ' ✓' : ''}</span>`;
+      const fpub = a => a.fecha_pub || a.detectado;
+      const gid = a => a.grupo || a.id;
+      const fuentesGrupo = a => new Set(AL.filter(x => gid(x) === gid(a)).map(x => x.dominio || x.fuente)).size;
+      const editor = esAnalista(), admin = esAdmin();
+      if (!editor) { $('rp-run').hidden = true; $('rp-nueva').hidden = true; }
+      if (!admin) $('rp-tab-config').hidden = true;
+      const ult = RUNS[0]; $('rp-ult').textContent = `Última recopilación · ${ult ? fHora(ult.inicio) : 'todavía no hubo'}`;
+      // ---------- pestañas ----------
+      const irTab = t => { document.querySelectorAll('#rp-tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t)); document.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== t; }); grabarLS('mx-rp-tab', t); };
+      $('rp-tabs').addEventListener('click', ev => { const b = ev.target.closest('[data-tab]'); if (b) irTab(b.dataset.tab); });
+      // ---------- filtros ----------
+      const F = { q: '', cat: '', pri: '', est: '', nat: '', org: '', fte: '', desde: '', hasta: '', det: '', grp: false };
+      $('rf-cat').innerHTML = '<option value="">Todas las categorías</option>' + CAT.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join('');
+      $('rf-nat').innerHTML = '<option value="">Toda naturaleza</option>' + Object.entries(NAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+      $('rf-ftes').innerHTML = [...new Set(AL.map(a => a.fuente).filter(Boolean))].sort().map(f => `<option value="${esc(f)}">`).join('');
+      const filtrar = () => AL.filter(a => {
+        const f = fechaART(fpub(a));
+        if (F.q && !low([a.titulo, a.resumen, a.fuente, a.dominio, a.codigo, a.observaciones].join(' ')).includes(low(F.q))) return false;
+        if (F.cat && a.categoria !== F.cat) return false;
+        if (F.pri && pri(a) !== F.pri) return false;
+        if (F.est && (F.est === 'pend' ? !['nueva', 'en_verificacion'].includes(a.estado) : a.estado !== F.est)) return false;
+        if (F.nat && a.naturaleza !== F.nat) return false;
+        if (F.org && a.origen !== F.org) return false;
+        if (F.fte && !low(`${a.fuente} ${a.dominio}`).includes(low(F.fte))) return false;
+        if (F.desde && f < F.desde) return false; if (F.hasta && f > F.hasta) return false;
+        if (F.det && fechaART(a.detectado) !== F.det) return false;
+        return true;
+      }).sort((x, y) => (PRK[pri(x)] - PRK[pri(y)]) * 0 || String(fpub(y)).localeCompare(String(fpub(x))));
+      let pag = 1;
+      function pintarAlertas() {
+        let L = filtrar();
+        if (F.grp) { const vistos = new Set(); L = L.filter(a => { const g = gid(a); if (vistos.has(g)) return false; vistos.add(g); return true; }); }
+        $('rp-al-n').textContent = `${L.length} ${F.grp ? 'acontecimientos' : 'alertas'}`;
+        const ini = (pag - 1) * 25; if (ini >= L.length && pag > 1) { pag = 1; return pintarAlertas(); }
+        $('rp-al').innerHTML = L.slice(ini, ini + 25).map(a => `<tr data-id="${a.id}" style="cursor:pointer">
+            <td class="nw mx-mono" style="color:var(--ink-2)">${esc(fLarga(fechaART(fpub(a))))}</td><td class="nw">${prB(a)}</td>
+            <td class="tit">${esc(a.titulo)}<div class="mx-small">${esc(a.fuente || a.dominio || '')} · ${esc(a.codigo)}${a.posible_relacion ? ' · <b style="color:var(--media)">posible relación</b>' : ''}</div></td>
+            <td class="nw">${esc(catN(a.categoria))}</td><td class="nw mx-small">${esc(NAT[a.naturaleza] || '')}</td>
+            <td class="nw"><span class="rp-st ${a.estado}">${EST[a.estado]}</span></td><td class="nw mx-mono" style="text-align:center">${fuentesGrupo(a)}</td></tr>`).join('')
+          || `<tr><td colspan="7" class="mx-empty">${AL.length ? 'No hay alertas con estos filtros.' : 'Todavía no hay alertas. Se registran con la próxima recopilación o con "Ejecutar ahora".'}</td></tr>`;
+        if (L.length > 25) paginar($('rp-pag'), L.length, 25, pag, n => { pag = n; pintarAlertas(); }); else $('rp-pag').innerHTML = '';
+        $('rp-csv').onclick = () => csv(`reputacion-alertas`, ['Código', 'Entidad', 'Fecha de publicación', 'Fecha de detección', 'Última actualización', 'Título', 'Resumen', 'Fuente', 'Dominio', 'URL', 'Categoría',
+          'Palabras coincidentes', 'Idioma', 'País', 'Confiabilidad de la fuente', 'Relevancia', 'Impacto', 'Puntaje', 'Prioridad preliminar', 'Prioridad del analista', 'Motivo', 'Estado', 'Naturaleza',
+          'Acontecimiento', 'Fuentes del acontecimiento', 'Evidencias', 'Analista', 'Observaciones', 'Origen'],
+          L.map(a => [a.codigo, a.entidad, fechaART(fpub(a)), fHora(a.detectado), fHora(a.actualizado), a.titulo, a.resumen || '', a.fuente || '', a.dominio || '', a.url || '', catN(a.categoria),
+            (a.palabras || []).join(', '), a.idioma || '', a.pais || '', a.f_confiabilidad ?? '', a.f_relevancia ?? '', a.f_impacto ?? '', a.puntaje ?? '', PRI[a.prioridad], a.prioridad_analista ? PRI[a.prioridad_analista] : '',
+            a.motivo_prioridad || '', EST[a.estado], NAT[a.naturaleza], (AL.find(x => x.id === gid(a)) || a).codigo, fuentesGrupo(a), (a.evidencias || []).map(e => e.url).join(' | '), a.analista || '', a.observaciones || '', ORG[a.origen]]));
+      }
+      const enlazar = (id, k, ev) => $(id).addEventListener(ev || 'input', () => { F[k] = $(id).type === 'checkbox' ? $(id).checked : $(id).value; pag = 1; pintarAlertas(); });
+      [['rf-q', 'q'], ['rf-fte', 'fte']].forEach(([i, k]) => enlazar(i, k));
+      [['rf-cat', 'cat'], ['rf-pri', 'pri'], ['rf-est', 'est'], ['rf-nat', 'nat'], ['rf-org', 'org'], ['rf-desde', 'desde'], ['rf-hasta', 'hasta'], ['rf-grp', 'grp']].forEach(([i, k]) => enlazar(i, k, 'change'));
+      $('rf-limpiar').addEventListener('click', () => { Object.keys(F).forEach(k => { F[k] = k === 'grp' ? false : ''; }); ['rf-q', 'rf-cat', 'rf-pri', 'rf-est', 'rf-nat', 'rf-org', 'rf-fte', 'rf-desde', 'rf-hasta'].forEach(i => { $(i).value = ''; }); $('rf-grp').checked = false; pintarAlertas(); });
+      const filtrarDesdePanel = (k, v) => { Object.keys(F).forEach(x => { F[x] = x === 'grp' ? false : ''; }); F[k] = v; ['rf-q', 'rf-cat', 'rf-pri', 'rf-est', 'rf-nat', 'rf-org', 'rf-fte', 'rf-desde', 'rf-hasta'].forEach(i => { $(i).value = ''; });
+        const ids = { cat: 'rf-cat', pri: 'rf-pri', est: 'rf-est', fte: 'rf-fte', desde: 'rf-desde', q: 'rf-q' }; if (ids[k]) $(ids[k]).value = v; pag = 1; pintarAlertas(); irTab('alertas'); };
+      // ---------- panel ----------
+      function pintarPanel() {
+        const hoy = hoyISO(), vivas = AL.filter(a => a.estado !== 'descartada'), pend = AL.filter(a => ['nueva', 'en_verificacion'].includes(a.estado));
+        $('rp-n-pend').textContent = pend.length;
+        const K = [['Total de alertas', AL.length, `${new Set(AL.map(gid)).size} acontecimientos distintos`, 'q', ''],
+          ['Nuevas del día', AL.filter(a => fechaART(a.detectado) === hoy).length, 'detectadas hoy', 'det', hoy],
+          ['Pendientes de verificación', pend.length, 'nuevas o en verificación', 'est', 'pend'],
+          ['Confirmadas', AL.filter(a => a.estado === 'confirmada').length, 'por un analista', 'est', 'confirmada'],
+          ['Descartadas', AL.filter(a => a.estado === 'descartada').length, 'con historial', 'est', 'descartada']];
+        $('rp-kpis').innerHTML = K.map(k => `<button type="button" class="rp-kpi" data-k="${k[3]}" data-v="${k[4]}"><span>${k[0]}</span><b>${k[1]}</b><small>${esc(k[2])}</small></button>`).join('');
+        $('rp-kpis').querySelectorAll('[data-k]').forEach(b => b.addEventListener('click', () => filtrarDesdePanel(b.dataset.k, b.dataset.v)));
+        const barras = (cont, filas, k, col) => { const mx = Math.max(1, ...filas.map(f => f[1]));
+          $(cont).innerHTML = filas.map(f => `<div class="rp-bar"><button type="button" data-v="${esc(f[2] ?? f[0])}">${esc(f[0])}</button><span class="b"><i style="width:${f[1] / mx * 100}%;background:${f[3] || col || 'var(--primary)'}"></i></span><b class="mx-mono">${f[1]}</b></div>`).join('') || '<div class="mx-empty">Sin datos.</div>';
+          $(cont).querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => filtrarDesdePanel(k, b.dataset.v))); };
+        barras('rp-prio', ['critica', 'alta', 'media', 'baja'].map(p => [PRI[p], vivas.filter(a => pri(a) === p).length, p, p === 'critica' || p === 'alta' ? 'var(--alta)' : p === 'media' ? 'var(--media)' : 'var(--line-2)']), 'pri');
+        const cc = {}; vivas.forEach(a => { cc[a.categoria] = (cc[a.categoria] || 0) + 1; });
+        $('rp-cat-n').textContent = `${vivas.length} alertas sin descartar`;
+        barras('rp-cat', Object.entries(cc).sort((a, b) => b[1] - a[1]).map(([k, n]) => [catN(k), n, k]), 'cat');
+        const fc = {}; AL.forEach(a => { const f = a.fuente || a.dominio || '—'; fc[f] = (fc[f] || 0) + 1; });
+        barras('rp-fte', Object.entries(fc).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => [k, n, k]), 'fte', 'var(--cds-chart-categorical-2, var(--primary))');
+        const e = ENT(), mc = {}, rx = t => new RegExp('(^|[^a-z0-9ñ])' + sinTilde(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9ñ])');
+        [['Entidad', e.terminos || []], ['Producto o servicio', e.productos || []], ['Proveedor', e.proveedores || []], ['Dominio oficial', e.dominios || []]].forEach(([g, ts]) => ts.forEach(t => {
+          const r = rx(t), n = AL.filter(a => r.test(sinTilde(`${a.titulo} ${a.resumen || ''} ${a.url || ''}`))).length; if (n) mc[`${t} · ${g}`] = [n, t]; }));
+        barras('rp-marcas', Object.entries(mc).sort((a, b) => b[1][0] - a[1][0]).slice(0, 10).map(([k, v]) => [k, v[0], v[1]]), 'q', 'var(--cds-chart-categorical-3, var(--primary))');
+        const seg = AL.filter(a => a.estado === 'seguimiento' || (['nueva', 'en_verificacion'].includes(a.estado) && ['alta', 'critica'].includes(pri(a)))).sort((x, y) => PRK[pri(x)] - PRK[pri(y)]).slice(0, 8);
+        $('rp-seg').innerHTML = seg.map(a => `<div class="rp-bar" style="grid-template-columns:auto 1fr auto;cursor:pointer" data-id="${a.id}">${prB(a)}<span>${esc(a.titulo)}<div class="mx-small">${esc(a.fuente || '')} · ${esc(fLarga(fechaART(fpub(a))))}</div></span><span class="rp-st ${a.estado}">${EST[a.estado]}</span></div>`).join('') || '<div class="mx-empty">Nada pendiente de seguimiento.</div>';
+        $('rp-seg').querySelectorAll('[data-id]').forEach(x => x.addEventListener('click', () => ficha(x.dataset.id)));
+        // evolución 60 días
+        const dias = []; for (let i = 59; i >= 0; i--) dias.push(fechaART(new Date(Date.now() - i * 864e5).toISOString()));
+        const pub = dias.map(d => AL.filter(a => fechaART(fpub(a)) === d).length), evs = dias.map(d => new Set(AL.filter(a => fechaART(fpub(a)) === d).map(gid)).size);
+        const mx = Math.max(1, ...pub), W = 600, H = 150, bw = W / dias.length, y = v => H - 18 - v / mx * (H - 30);
+        $('rp-evol').className = 'rp-evol';
+        $('rp-evol').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Menciones por día">${pub.map((v, i) => v ? `<rect x="${i * bw + 1}" y="${y(v)}" width="${bw - 2}" height="${H - 18 - y(v)}" fill="var(--primary)" opacity=".35"><title>${fLarga(dias.at(i))}: ${v} publicaciones, ${evs.at(i)} acontecimientos</title></rect>` : '').join('')}
+          <path d="M${evs.map((v, i) => `${(i + .5) * bw},${y(v)}`).join(' L')}" fill="none" stroke="var(--alta)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+          <text x="0" y="${H - 4}" font-size="10" fill="var(--mute)">${fCorta(dias.at(0))}</text><text x="${W}" y="${H - 4}" font-size="10" fill="var(--mute)" text-anchor="end">${fCorta(dias.at(-1))}</text><text x="2" y="12" font-size="10" fill="var(--mute)">máx. ${mx}</text></svg>`;
+      }
+      // ---------- ficha de una alerta ----------
+      function ficha(id) {
+        const a = AL.find(x => x.id === id); if (!a) return;
+        cerrarFicha();
+        const grp = AL.filter(x => gid(x) === gid(a) && x.id !== a.id), rel = a.posible_relacion ? AL.find(x => x.id === a.posible_relacion) : null;
+        const fac = [['Impacto de la categoría', a.f_impacto, (PRC().pesos || {}).impacto ?? .3], ['Relevancia para la entidad', a.f_relevancia, (PRC().pesos || {}).relevancia ?? .2], ['Confiabilidad de la fuente', a.f_confiabilidad, (PRC().pesos || {}).confiabilidad ?? .2],
+          ['Alcance', a.f_alcance, (PRC().pesos || {}).alcance ?? .1], ['Actualidad', a.f_actualidad, (PRC().pesos || {}).actualidad ?? .1], ['Corroboración independiente', a.f_corroboracion, (PRC().pesos || {}).corroboracion ?? .1]];
+        const m = document.createElement('div');
+        m.className = 'mx mx-modal'; m.id = 'mx-modal'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+        const sel = (idc, obj, v) => `<select class="mx-select" id="${idc}" ${editor ? '' : 'disabled'}>${Object.entries(obj).map(([k, t]) => `<option value="${k}"${k === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+        m.innerHTML = `<div class="mx-dialog" style="max-width:900px">
+          <div class="mx-dialog-h ${pri(a) === 'critica' ? 'alta' : ''}"><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">${prB(a)}<span class="rp-st ${a.estado}">${EST[a.estado]}</span>
+            <span class="mx-badge neutral">${esc(catN(a.categoria))}</span><span class="mx-mono" style="color:var(--mute)">${esc(a.codigo)}</span></div>
+            <button type="button" class="mx-x" data-cerrar aria-label="Cerrar">${ico('x')}</button></div>
+          <div class="mx-dialog-b">
+            <h2 class="mx-h2" style="font-size:20px;line-height:27px">${esc(a.titulo)}</h2>
+            ${a.resumen ? `<p class="mx-body">${esc(a.resumen)}</p>` : ''}
+            <div class="meta3">
+              <div class="mx-tile"><span>Fuente</span><b>${esc(a.fuente || '—')}${a.dominio ? ` · ${esc(a.dominio)}` : ''}</b></div>
+              <div class="mx-tile"><span>Publicada</span><b>${esc(a.fecha_pub ? fHora(a.fecha_pub) : 'sin fecha en la fuente')}</b></div>
+              <div class="mx-tile"><span>Detectada</span><b>${esc(fHora(a.detectado))} · ${esc(ORG[a.origen])}</b></div>
+              <div class="mx-tile"><span>Naturaleza (preliminar)</span><b>${esc(NAT[a.naturaleza])}</b></div>
+              <div class="mx-tile"><span>Palabras coincidentes</span><b>${esc((a.palabras || []).join(', ') || '—')}</b></div>
+              <div class="mx-tile"><span>Idioma · país</span><b>${esc([a.idioma, a.pais].filter(Boolean).join(' · ') || '—')}</b></div>
+            </div>
+            ${a.url ? `<div><a class="mx-btn primary" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">Abrir la publicación original ${ico('ext', 'width:15px;height:15px')}</a></div>` : ''}
+            <div class="mx-g2">
+              <div><div class="mx-eyebrow" style="margin-bottom:6px">Cómo se calculó la prioridad preliminar · ${a.puntaje ?? '—'} / 100</div>
+                ${a.puntaje != null ? `<div class="rp-fac"><span class="mx-small">Factor</span><span class="mx-small" style="text-align:right">Valor</span><span class="mx-small" style="text-align:right">Peso</span>${fac.map(f => `<span>${f[0]}</span><b>${f[1] != null ? Number(f[1]).toFixed(2).replace('.', ',') : '—'}</b><b>${Math.round(f[2] * 100)}%</b>`).join('')}</div>` : '<p class="mx-small">Alerta cargada a mano o importada: sin puntaje automático.</p>'}
+                <p class="mx-small" style="margin-top:6px">Es una ayuda para ordenar la revisión, no una medición del riesgo real.</p></div>
+              <div><div class="mx-eyebrow" style="margin-bottom:6px">Mismo acontecimiento · ${grp.length + 1} publicaciones de ${fuentesGrupo(a)} fuentes</div>
+                ${grp.length ? grp.map(x => `<div class="mx-small" style="margin-bottom:4px">${esc(fLarga(fechaART(fpub(x))))} · <b>${esc(x.fuente || x.dominio || '')}</b> · ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.titulo)}</a>` : esc(x.titulo)}</div>`).join('') : '<p class="mx-small">Sin otras publicaciones agrupadas.</p>'}
+                ${rel ? `<p class="mx-small" style="margin-top:6px;color:var(--media)"><b>Posible relación (sin agrupar):</b> <a href="#" data-ir="${rel.id}">${esc(rel.codigo)} · ${esc(rel.titulo)}</a></p>` : ''}
+                ${(a.evidencias || []).length ? `<div class="mx-eyebrow" style="margin:10px 0 6px">Evidencias complementarias</div>${a.evidencias.map(e => `<div class="mx-small">${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${esc(e.url)}</a>` : ''} ${esc(e.nota || '')} <span style="color:var(--mute)">· ${esc(e.por || '')} ${esc(e.fecha ? fHora(e.fecha) : '')}</span></div>`).join('')}` : ''}</div>
+            </div>
+            <section style="border-top:1px solid var(--div);padding-top:14px">
+              <div class="mx-eyebrow" style="margin-bottom:10px">Revisión del analista${a.analista ? ` · última por ${esc(a.analista)}` : ''}</div>
+              <div class="mx-form">
+                <div><label class="mx-label" for="rv-est">Estado</label>${sel('rv-est', EST, a.estado)}</div>
+                <div><label class="mx-label" for="rv-nat">Naturaleza</label>${sel('rv-nat', NAT, a.naturaleza)}</div>
+                <div><label class="mx-label" for="rv-cat">Categoría</label>${sel('rv-cat', Object.fromEntries(CAT.map(c => [c.id, c.nombre])), a.categoria)}</div>
+                <div><label class="mx-label" for="rv-pri">Prioridad (analista)</label>${sel('rv-pri', Object.assign({ '': `Usar la preliminar (${PRI[a.prioridad]})` }, PRI), a.prioridad_analista || '')}</div>
+                <div style="grid-column:1/-1"><label class="mx-label" for="rv-mot">Motivo del cambio de prioridad <em>*</em></label><input class="mx-input" id="rv-mot" value="${esc(a.motivo_prioridad || '')}" ${editor ? '' : 'disabled'} placeholder="Obligatorio si cambiás la prioridad"></div>
+                <div style="grid-column:1/-1"><label class="mx-label" for="rv-obs">Observaciones</label><textarea class="mx-textarea" id="rv-obs" ${editor ? '' : 'disabled'} placeholder="Qué se verificó, con quién, qué falta…">${esc(a.observaciones || '')}</textarea></div>
+                <div><label class="mx-label" for="rv-ev-u">Agregar evidencia (URL)</label><input class="mx-input" id="rv-ev-u" ${editor ? '' : 'disabled'} placeholder="https://…"></div>
+                <div><label class="mx-label" for="rv-ev-n">Nota de la evidencia</label><input class="mx-input" id="rv-ev-n" ${editor ? '' : 'disabled'} placeholder="Ej.: comunicado oficial del banco"></div>
+              </div>
+              <p class="mx-msg" id="rv-msg" aria-live="polite" style="margin-top:8px">${editor ? '' : 'Solo lectura: tu usuario no tiene rol de analista.'}</p>
+              ${editor ? '<div style="display:flex;justify-content:flex-end;gap:8px"><button type="button" class="mx-btn" data-cerrar>Cancelar</button><button type="button" class="mx-btn primary" id="rv-ok">Guardar revisión</button></div>' : ''}
+            </section>
+            <section style="border-top:1px solid var(--div);padding-top:14px"><div class="mx-eyebrow" style="margin-bottom:8px">Historial</div><div class="rp-hist" id="rv-hist"><span class="mx-small">Cargando…</span></div></section>
+          </div></div>`;
+        m.addEventListener('click', ev => { if (ev.target === m || ev.target.closest('[data-cerrar]')) cerrarFicha(); const ir = ev.target.closest('[data-ir]'); if (ir) { ev.preventDefault(); ficha(ir.dataset.ir); } });
+        document.body.appendChild(m); document.body.style.overflow = 'hidden';
+        const CAMPO = { estado: 'Estado', naturaleza: 'Naturaleza', categoria: 'Categoría', prioridad_analista: 'Prioridad', motivo_prioridad: 'Motivo', observaciones: 'Observaciones', evidencias: 'Evidencias', grupo: 'Acontecimiento', posible_relacion: 'Posible relación', alta: 'Alta', prioridad: 'Prioridad preliminar', tono: 'Tono' };
+        const val = (k, v) => v == null || v === '' ? '—' : k === 'estado' ? EST[v] || v : k === 'naturaleza' ? NAT[v] || v : k === 'categoria' ? catN(v) : k === 'prioridad_analista' || k === 'prioridad' ? PRI[v] || v : k === 'evidencias' ? `${v.length} evidencia(s)` : k === 'alta' ? ORG[v] || v : String(v).slice(0, 120);
+        sbFetch(`monitor_rep_historial?select=*&alerta_id=eq.${a.id}&order=fecha.desc`).then(H => {
+          $('rv-hist').innerHTML = H.map(h => `<div><b>${esc(fHora(h.fecha))}</b> · ${esc(h.nombre || 'sistema')}<div class="mx-small">${Object.keys(h.despues || {}).map(k => `${esc(CAMPO[k] || k)}: ${h.antes ? `${esc(val(k, (h.antes || {})[k]))} → ` : ''}${esc(val(k, h.despues[k]))}`).join(' · ')}${h.motivo ? ` · <i>Motivo: ${esc(h.motivo)}</i>` : ''}</div></div>`).join('') || '<span class="mx-small">Sin cambios registrados.</span>';
+        }).catch(() => { $('rv-hist').innerHTML = '<span class="mx-small">No se pudo leer el historial.</span>'; });
+        if (!editor) return;
+        $('rv-ok').addEventListener('click', async () => {
+          const cambios = { estado: $('rv-est').value, naturaleza: $('rv-nat').value, categoria: $('rv-cat').value, prioridad_analista: $('rv-pri').value || null,
+            motivo_prioridad: $('rv-mot').value.trim() || null, observaciones: $('rv-obs').value.trim() };
+          const eu = $('rv-ev-u').value.trim(), en = $('rv-ev-n').value.trim(), msg = $('rv-msg');
+          if (eu && !/^https?:\/\/[^\s]+\.[^\s]+/.test(eu)) { msg.className = 'mx-msg err'; msg.textContent = 'La evidencia tiene que ser una dirección web (https://…).'; return; }
+          if ((cambios.prioridad_analista || null) !== (a.prioridad_analista || null) && !cambios.motivo_prioridad) { msg.className = 'mx-msg err'; msg.textContent = 'Escribí el motivo del cambio de prioridad.'; $('rv-mot').focus(); return; }
+          if (eu || en) cambios.evidencias = (a.evidencias || []).concat([{ url: eu, nota: en, por: (PERFIL || {}).nombre || '', fecha: new Date().toISOString() }]);
+          msg.className = 'mx-msg'; msg.textContent = 'Guardando…'; $('rv-ok').disabled = true;
+          try {
+            const r = await sbFetch(`monitor_rep_alertas?id=eq.${a.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(cambios) });
+            if (!r || !r.length) throw new Error('No tenés permiso para revisar alertas (se requiere rol de analista).');
+            Object.assign(a, r[0]); cerrarFicha(); pintarTodo(); ficha(a.id);
+          } catch (err) { msg.className = 'mx-msg err'; msg.textContent = errBase(err); $('rv-ok').disabled = false; }
+        });
+      }
+      $('rp-al').addEventListener('click', ev => { const tr = ev.target.closest('[data-id]'); if (tr) ficha(tr.dataset.id); });
+      // ---------- alta manual ----------
+      $('rp-nueva').addEventListener('click', () => {
+        cerrarFicha();
+        const m = document.createElement('div'); m.className = 'mx mx-modal'; m.id = 'mx-modal'; m.setAttribute('role', 'dialog');
+        m.innerHTML = `<div class="mx-dialog" style="max-width:640px"><div class="mx-dialog-h"><b class="mx-h3">Registrar una alerta manualmente</b><button type="button" class="mx-x" data-cerrar aria-label="Cerrar">${ico('x')}</button></div>
+          <form class="mx-dialog-b" id="na-f" novalidate><p class="mx-small" style="margin:0">Entra como <b>nueva</b>, sin verificar, firmada con tu nombre. Usala para fuentes que no se leen automáticamente (BCRA, Boletín Oficial, redes, reclamos).</p>
+          <div class="mx-form"><div style="grid-column:1/-1"><label class="mx-label">Título <em>*</em></label><input class="mx-input" id="na-t" maxlength="300" required></div>
+          <div style="grid-column:1/-1"><label class="mx-label">Dirección de la publicación original</label><input class="mx-input" id="na-u" placeholder="https://…"></div>
+          <div><label class="mx-label">Fuente</label><input class="mx-input" id="na-f2" placeholder="Medio u organismo"></div>
+          <div><label class="mx-label">Fecha de publicación</label><input class="mx-input" id="na-d" type="date" max="${hoyISO()}" value="${hoyISO()}"></div>
+          <div><label class="mx-label">Categoría</label><select class="mx-select" id="na-c">${CAT.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join('')}</select></div>
+          <div><label class="mx-label">Naturaleza</label><select class="mx-select" id="na-n">${Object.entries(NAT).filter(([k]) => k !== 'hecho_confirmado').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+          <div><label class="mx-label">Prioridad</label><select class="mx-select" id="na-p">${Object.entries(PRI).map(([k, v]) => `<option value="${k}"${k === 'media' ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
+          <div style="grid-column:1/-1"><label class="mx-label">Resumen</label><textarea class="mx-textarea" id="na-r"></textarea></div></div>
+          <p class="mx-msg" id="na-m"></p><div style="display:flex;justify-content:flex-end;gap:8px"><button type="button" class="mx-btn" data-cerrar>Cancelar</button><button type="submit" class="mx-btn primary" id="na-ok">Registrar</button></div></form></div>`;
+        m.addEventListener('click', ev => { if (ev.target === m || ev.target.closest('[data-cerrar]')) cerrarFicha(); });
+        document.body.appendChild(m); document.body.style.overflow = 'hidden'; $('na-t').focus();
+        $('na-f').addEventListener('submit', async ev => {
+          ev.preventDefault(); const t = $('na-t').value.trim(), u = $('na-u').value.trim();
+          if (t.length < 8) { $('na-m').className = 'mx-msg err'; $('na-m').textContent = 'Escribí un título de al menos 8 caracteres.'; return; }
+          if (u && !/^https?:\/\/[^\s]+\.[^\s]+/.test(u)) { $('na-m').className = 'mx-msg err'; $('na-m').textContent = 'La dirección tiene que empezar con https://'; return; }
+          let dom = ''; try { dom = u ? new URL(u).hostname.replace(/^www\./, '') : ''; } catch (e) { /* sin dominio */ }
+          $('na-ok').disabled = true;
+          try {
+            const r = await sbFetch('monitor_rep_alertas', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify({
+              titulo: t, url: u || null, url_norm: u ? `manual:${u}` : null, fuente: $('na-f2').value.trim() || dom || null, dominio: dom || null, fecha_pub: $('na-d').value ? new Date($('na-d').value + 'T12:00:00-03:00').toISOString() : null,
+              categoria: $('na-c').value, naturaleza: $('na-n').value, prioridad: $('na-p').value, resumen: $('na-r').value.trim() || null, entidad: ENT().nombre || undefined }) });
+            AL.unshift(r[0]); cerrarFicha(); pintarTodo(); ficha(r[0].id);
+          } catch (err) { $('na-ok').disabled = false; $('na-m').className = 'mx-msg err'; $('na-m').textContent = /duplicate|unique/i.test(err.message) ? 'Esa dirección ya está registrada.' : errBase(err); }
+        });
+      });
+      // ---------- ejecutar ----------
+      const ejecutar = async (cuerpo, b) => {
+        const txt = b.textContent; b.disabled = true; b.textContent = 'Consultando fuentes…';
+        try {
+          const r = await fetch(`${SB.url}/functions/v1/monitor-reputacion`, { method: 'POST', headers: { apikey: SB.anonKey, Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || j.message || `HTTP ${r.status}`);
+          await cargar(); pintarTodo();
+          window.alert(j.omitido ? j.omitido : `Listo: ${j.consultas} consultas. ${(j.resultados || []).reduce((s, x) => s + x.nuevos, 0)} alertas nuevas. ${(j.resultados || []).filter(x => x.estado === 'error' || x.estado === 'limitado').length} con error o límite (ver "Fuentes y ejecuciones").`);
+        } catch (err) { window.alert('No se pudo ejecutar: ' + err.message); }
+        b.disabled = false; b.textContent = txt;
+      };
+      $('rp-run').addEventListener('click', () => ejecutar({ todas: true }, $('rp-run')));
+      // ---------- fuentes y ejecuciones ----------
+      function pintarFuentes() {
+        $('rp-cons').innerHTML = CON.map(c => { const r = RUNS.find(x => x.consulta_id === c.id);
+          return `<tr><td><b>${esc(c.nombre)}</b>${c.activa ? '' : ' <span class="mx-badge neutral">apagada</span>'}${c.nota ? `<div class="mx-small">${esc(c.nota)}</div>` : ''}</td><td class="nw">${esc(ORG[c.fuente])}</td><td class="nw">cada ${c.cada_horas} h</td>
+            <td class="nw mx-mono">${r ? esc(fHora(r.inicio)) : '—'}</td><td class="nw">${r ? `<span class="rp-run ${r.estado}">${RUN[r.estado]}</span>` : '<span class="mx-small">nunca</span>'}</td>
+            <td class="nw mx-mono">${r ? `${r.recuperados} / ${r.relevantes} / ${r.nuevos}` : '—'}</td><td class="nw">${editor && c.activa ? `<button type="button" class="mx-btn sm" data-run="${c.id}">Ejecutar</button>` : ''}</td></tr>`; }).join('');
+        $('rp-cons').querySelectorAll('[data-run]').forEach(b => b.addEventListener('click', () => ejecutar({ consulta_id: +b.dataset.run }, b)));
+        $('rp-runs').innerHTML = RUNS.slice(0, 50).map(r => `<tr><td class="nw mx-mono">${esc(fHora(r.inicio))}</td><td>${esc(r.nombre || '')}<div class="mx-small">${esc(r.disparada_por)}</div></td><td class="nw"><span class="rp-run ${r.estado}">${RUN[r.estado]}</span></td>
+            <td class="nw mx-mono">${r.http ?? '—'}</td><td class="mx-mono">${r.recuperados}</td><td class="mx-mono">${r.relevantes}</td><td class="mx-mono">${r.nuevos}</td><td class="mx-mono">${r.duplicados}</td><td class="mx-small" style="max-width:320px">${esc(r.error || '')}</td></tr>`).join('')
+          || '<tr><td colspan="9" class="mx-empty">Todavía no hubo ejecuciones.</td></tr>';
+      }
+      // ---------- configuración (administradores) ----------
+      const guardar = async (tabla, filtro, cuerpo, metodo) => sbFetch(`${tabla}${filtro ? '?' + filtro : ''}`, { method: metodo || 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(cuerpo) });
+      const lista = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+      function pintarConfig() {
+        if (!admin) return;
+        const e = ENT();
+        $('cf-ent').innerHTML = [['nombre', 'Nombre de la entidad', e.nombre || ''], ['terminos', 'Nombres y siglas que la identifican', (e.terminos || []).join(', ')], ['excluir', 'Frases a excluir (falsos positivos)', (e.excluir || []).join(', ')],
+          ['productos', 'Productos, marcas y servicios', (e.productos || []).join(', ')], ['dominios', 'Dominios oficiales', (e.dominios || []).join(', ')], ['proveedores', 'Proveedores críticos', (e.proveedores || []).join(', ')]]
+          .map(([k, l, v]) => `<div${k === 'nombre' ? '' : ' style="grid-column:1/-1"'}><label class="mx-label" for="cf-e-${k}">${l}</label><input class="mx-input" id="cf-e-${k}" value="${esc(v)}"></div>`).join('');
+        $('cf-con').innerHTML = CON.map(c => `<tr data-id="${c.id}"><td><input type="checkbox" class="cf-act" ${c.activa ? 'checked' : ''}></td><td><input class="mx-input rp-in cf-n" value="${esc(c.nombre)}"></td>
+            <td><select class="mx-select cf-f">${['gdelt', 'gnews', 'rss'].map(f => `<option value="${f}"${f === c.fuente ? ' selected' : ''}>${ORG[f]}</option>`).join('')}</select></td>
+            <td style="min-width:300px"><input class="mx-input rp-in cf-q" value="${esc(c.consulta)}"></td><td><input class="mx-input rp-in cf-h" type="number" min="1" max="168" value="${c.cada_horas}" style="width:80px"></td>
+            <td class="nw"><button type="button" class="mx-btn sm cf-ok">Guardar</button> <button type="button" class="mx-btn sm danger cf-del">Quitar</button></td></tr>`).join('');
+        $('cf-cat').innerHTML = CAT.map(c => `<tr data-id="${esc(c.id)}"><td><input type="checkbox" class="cf-act" ${c.activa ? 'checked' : ''}></td><td><input class="mx-input rp-in cf-n" value="${esc(c.nombre)}"></td>
+            <td><input class="mx-input rp-in cf-i" type="number" min="1" max="5" value="${c.impacto}" style="width:70px"></td><td style="min-width:320px"><input class="mx-input rp-in cf-p" value="${esc((c.palabras || []).join(', '))}"></td>
+            <td class="nw"><button type="button" class="mx-btn sm cf-ok">Guardar</button></td></tr>`).join('');
+        $('cf-fu').innerHTML = FU.map(f => `<tr data-id="${esc(f.dominio)}"><td class="mx-mono">${esc(f.dominio)}</td><td><input class="mx-input rp-in cf-n" value="${esc(f.nombre)}"></td>
+            <td><select class="mx-select cf-t">${Object.entries(TIPOF).map(([k, v]) => `<option value="${k}"${k === f.tipo ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+            <td><input class="mx-input rp-in cf-c" type="number" min="1" max="5" value="${f.confiabilidad}" style="width:70px"></td><td><input type="checkbox" class="cf-r" ${f.rss_permitido ? 'checked' : ''}></td>
+            <td class="nw"><button type="button" class="mx-btn sm cf-ok">Guardar</button> <button type="button" class="mx-btn sm danger cf-del">Quitar</button></td></tr>`).join('');
+        const p = PRC(), pe = Object.assign({ impacto: .3, relevancia: .2, confiabilidad: .2, alcance: .1, actualidad: .1, corroboracion: .1 }, p.pesos), um = Object.assign({ critica: 80, alta: 60, media: 40 }, p.umbrales);
+        $('cf-pr').innerHTML = `<p class="mx-small">Puntaje = 100 × Σ (peso × factor). Los pesos tienen que sumar 100%. Una sola fuente poco confiable nunca llega a "crítica", y una nota sin categoría de riesgo no pasa de "media".</p>
+          <div class="mx-form" style="grid-template-columns:repeat(3,minmax(0,1fr))">${Object.keys(pe).map(k => `<div><label class="mx-label">Peso · ${k} (%)</label><input class="mx-input cf-pe" data-k="${k}" type="number" min="0" max="100" value="${Math.round(pe[k] * 100)}"></div>`).join('')}
+          ${['critica', 'alta', 'media'].map(k => `<div><label class="mx-label">Umbral · ${PRI[k]} (desde)</label><input class="mx-input cf-um" data-k="${k}" type="number" min="1" max="100" value="${um[k]}"></div>`).join('')}</div>`;
+      }
+      const msgC = (id, t, ok) => { $(id).className = 'mx-msg ' + (ok ? 'ok' : 'err'); $(id).textContent = t; };
+      if (admin) {
+        $('cf-ent-ok').addEventListener('click', async () => {
+          const v = { nombre: $('cf-e-nombre').value.trim(), terminos: lista($('cf-e-terminos').value).map(low), excluir: lista($('cf-e-excluir').value).map(low), productos: lista($('cf-e-productos').value).map(low), dominios: lista($('cf-e-dominios').value).map(low), proveedores: lista($('cf-e-proveedores').value).map(low) };
+          if (!v.nombre || !v.terminos.length) return msgC('cf-ent-msg', 'Falta el nombre o al menos un término.');
+          try { await guardar('monitor_rep_config', 'id=eq.entidad', { valor: v, actualizado: new Date().toISOString() }); CFG.find(c => c.id === 'entidad').valor = v; msgC('cf-ent-msg', 'Guardado.', true); $('rp-ent').textContent = v.nombre; } catch (err) { msgC('cf-ent-msg', errBase(err)); }
+        });
+        $('cf-pr-ok').addEventListener('click', async () => {
+          const pesos = {}; document.querySelectorAll('.cf-pe').forEach(i => { pesos[i.dataset.k] = (+i.value || 0) / 100; });
+          const umbrales = {}; document.querySelectorAll('.cf-um').forEach(i => { umbrales[i.dataset.k] = +i.value; });
+          const tot = Math.round(Object.values(pesos).reduce((s, x) => s + x, 0) * 100);
+          if (tot !== 100) return msgC('cf-pr-msg', `Los pesos suman ${tot}%: tienen que sumar 100%.`);
+          if (!(umbrales.critica > umbrales.alta && umbrales.alta > umbrales.media)) return msgC('cf-pr-msg', 'Los umbrales tienen que ir de mayor a menor: crítica > alta > media.');
+          try { await guardar('monitor_rep_config', 'id=eq.prioridad', { valor: { pesos, umbrales }, actualizado: new Date().toISOString() }); CFG.find(c => c.id === 'prioridad').valor = { pesos, umbrales }; msgC('cf-pr-msg', 'Guardado. Se aplica a las alertas nuevas.', true); } catch (err) { msgC('cf-pr-msg', errBase(err)); }
+        });
+        const fila = (cont, fn) => $(cont).addEventListener('click', async ev => { const tr = ev.target.closest('tr[data-id]'); if (!tr) return; const b = ev.target.closest('button'); if (!b) return;
+          try { await fn(tr, b.classList.contains('cf-del')); await cargar(); pintarTodo(); } catch (err) { window.alert(errBase(err)); } });
+        fila('cf-con', async (tr, del) => {
+          if (del) { if (!window.confirm('¿Quitar esta consulta? Sus ejecuciones quedan en el registro.')) return; return guardar('monitor_rep_consultas', `id=eq.${tr.dataset.id}`, null, 'DELETE'); }
+          const v = { activa: tr.querySelector('.cf-act').checked, nombre: tr.querySelector('.cf-n').value.trim(), fuente: tr.querySelector('.cf-f').value, consulta: tr.querySelector('.cf-q').value.trim(), cada_horas: Math.min(168, Math.max(1, +tr.querySelector('.cf-h').value || 3)) };
+          if (v.fuente === 'gnews' && v.activa && !window.confirm('Google News RSS declara que su feed es solo para uso personal y no comercial. ¿Confirmás que Legales o Cumplimiento aprobó su uso?')) return;
+          if (v.fuente === 'rss') { let h = ''; try { const u = new URL(v.consulta); if (u.protocol !== 'https:') throw 0; h = u.hostname.replace(/^www\./, ''); } catch (e) { throw new Error('La dirección del feed tiene que ser https://…'); }
+            if (!FU.some(f => f.rss_permitido && (h === f.dominio || h.endsWith('.' + f.dominio)))) throw new Error(`El dominio ${h} no está habilitado para leer RSS: agregalo en "Fuentes y confiabilidad" y marcá "Leer su RSS".`); }
+          return guardar('monitor_rep_consultas', `id=eq.${tr.dataset.id}`, v);
+        });
+        fila('cf-cat', async tr => guardar('monitor_rep_categorias', `id=eq.${encodeURIComponent(tr.dataset.id)}`, { activa: tr.querySelector('.cf-act').checked, nombre: tr.querySelector('.cf-n').value.trim(), impacto: Math.min(5, Math.max(1, +tr.querySelector('.cf-i').value || 3)), palabras: lista(tr.querySelector('.cf-p').value).map(low) }));
+        fila('cf-fu', async (tr, del) => {
+          if (del) { if (!window.confirm('¿Quitar esta fuente de la lista?')) return; return guardar('monitor_rep_fuentes', `dominio=eq.${encodeURIComponent(tr.dataset.id)}`, null, 'DELETE'); }
+          return guardar('monitor_rep_fuentes', `dominio=eq.${encodeURIComponent(tr.dataset.id)}`, { nombre: tr.querySelector('.cf-n').value.trim(), tipo: tr.querySelector('.cf-t').value, confiabilidad: Math.min(5, Math.max(1, +tr.querySelector('.cf-c').value || 2)), rss_permitido: tr.querySelector('.cf-r').checked });
+        });
+        $('cf-con-add').addEventListener('click', async () => { const n = window.prompt('Nombre de la nueva consulta:'); if (!n) return;
+          try { await guardar('monitor_rep_consultas', '', { nombre: n.trim(), fuente: 'gdelt', consulta: `"${ENT().nombre || ''}"`, activa: false, cada_horas: 6 }, 'POST'); await cargar(); pintarTodo(); } catch (err) { window.alert(errBase(err)); } });
+        $('cf-cat-add').addEventListener('click', async () => { const n = window.prompt('Nombre de la nueva categoría:'); if (!n) return; const id = sinTilde(n).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+          try { await guardar('monitor_rep_categorias', '', { id, nombre: n.trim(), impacto: 3, orden: 500, palabras: [] }, 'POST'); await cargar(); pintarTodo(); } catch (err) { window.alert(errBase(err)); } });
+        $('cf-fu-add').addEventListener('click', async () => { const d = low(window.prompt('Dominio (ej.: diario.com.ar):') || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, ''); if (!d) return;
+          if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)) return window.alert('Dominio no válido.');
+          try { await guardar('monitor_rep_fuentes', '', { dominio: d, nombre: d, tipo: 'desconocido', confiabilidad: 2, rss_permitido: false }, 'POST'); await cargar(); pintarTodo(); } catch (err) { window.alert(errBase(err)); } });
+      }
+      function pintarTodo() { pintarPanel(); pintarAlertas(); pintarFuentes(); pintarConfig(); }
+      pintarTodo();
+      const t0 = leerLS('mx-rp-tab'); if (t0 && (t0 !== 'config' || admin)) irTab(t0);
     },
 
     async usuarios() {
