@@ -1762,6 +1762,8 @@
       const fpub = a => a.fecha_pub || a.detectado;
       const gid = a => a.grupo || a.id;
       const fuentesGrupo = a => new Set(AL.filter(x => gid(x) === gid(a)).map(x => x.dominio || x.fuente)).size;
+      const hue = t => [...String(t)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+      const srcB = a => { const n = a.fuente || a.dominio || '—'; return `<span class="rp-src"><span class="rp-av" style="--h:${hue(n)}">${esc(n.replace(/^(www\.|el |la |diario )/i, '')[0] || '·').toUpperCase()}</span>${esc(n)}</span>`; };
       const editor = esAnalista(), admin = esAdmin();
       if (!editor) { $('rp-run').hidden = true; $('rp-nueva').hidden = true; }
       if (!admin) $('rp-tab-config').hidden = true;
@@ -1793,9 +1795,9 @@
         if (F.grp) { const vistos = new Set(); L = L.filter(a => { const g = gid(a); if (vistos.has(g)) return false; vistos.add(g); return true; }); }
         $('rp-al-n').textContent = `${L.length} ${F.grp ? 'acontecimientos' : 'alertas'}`;
         const ini = (pag - 1) * 25; if (ini >= L.length && pag > 1) { pag = 1; return pintarAlertas(); }
-        $('rp-al').innerHTML = L.slice(ini, ini + 25).map(a => `<tr data-id="${a.id}" style="cursor:pointer">
+        $('rp-al').innerHTML = L.slice(ini, ini + 25).map(a => `<tr data-id="${a.id}" class="pc-${pri(a)}" style="cursor:pointer">
             <td class="nw mx-mono" style="color:var(--ink-2)">${esc(fLarga(fechaART(fpub(a))))}</td><td class="nw">${prB(a)}</td>
-            <td class="tit">${esc(a.titulo)}<div class="mx-small">${esc(a.fuente || a.dominio || '')} · ${esc(a.codigo)}${a.posible_relacion ? ' · <b style="color:var(--media)">posible relación</b>' : ''}</div></td>
+            <td class="tit">${esc(a.titulo)}<div class="mx-small" style="margin-top:3px">${srcB(a)} · <span class="mx-mono">${esc(a.codigo)}</span>${a.posible_relacion ? ' · <b style="color:var(--media)">posible relación</b>' : ''}</div></td>
             <td class="nw">${esc(catN(a.categoria))}</td><td class="nw mx-small">${esc(NAT[a.naturaleza] || '')}</td>
             <td class="nw"><span class="rp-st ${a.estado}">${EST[a.estado]}</span></td><td class="nw mx-mono" style="text-align:center">${fuentesGrupo(a)}</td></tr>`).join('')
           || `<tr><td colspan="7" class="mx-empty">${AL.length ? 'No hay alertas con estos filtros.' : 'Todavía no hay alertas. Se registran con la próxima recopilación o con "Ejecutar ahora".'}</td></tr>`;
@@ -1817,37 +1819,55 @@
       function pintarPanel() {
         const hoy = hoyISO(), vivas = AL.filter(a => a.estado !== 'descartada'), pend = AL.filter(a => ['nueva', 'en_verificacion'].includes(a.estado));
         $('rp-n-pend').textContent = pend.length;
-        const K = [['Total de alertas', AL.length, `${new Set(AL.map(gid)).size} acontecimientos distintos`, 'q', ''],
-          ['Nuevas del día', AL.filter(a => fechaART(a.detectado) === hoy).length, 'detectadas hoy', 'det', hoy],
-          ['Pendientes de verificación', pend.length, 'nuevas o en verificación', 'est', 'pend'],
-          ['Confirmadas', AL.filter(a => a.estado === 'confirmada').length, 'por un analista', 'est', 'confirmada'],
-          ['Descartadas', AL.filter(a => a.estado === 'descartada').length, 'con historial', 'est', 'descartada']];
-        $('rp-kpis').innerHTML = K.map(k => `<button type="button" class="rp-kpi" data-k="${k[3]}" data-v="${k[4]}"><span>${k[0]}</span><b>${k[1]}</b><small>${esc(k[2])}</small></button>`).join('');
+        $('rp-n-pend').classList.toggle('cero', !pend.length);
+        const KI = { tot: '<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>', hoy: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', pen: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
+          con: '<path d="M20 6L9 17l-5-5"/>', des: '<path d="M18 6L6 18M6 6l12 12"/>' };
+        const K = [['Total de alertas', AL.length, `${new Set(AL.map(gid)).size} acontecimientos distintos`, 'q', '', 'k-blue', 'tot'],
+          ['Nuevas del día', AL.filter(a => fechaART(a.detectado) === hoy).length, 'detectadas hoy', 'det', hoy, 'k-ok', 'hoy'],
+          ['Pendientes', pend.length, 'nuevas o en verificación', 'est', 'pend', 'k-amb', 'pen'],
+          ['Confirmadas', AL.filter(a => a.estado === 'confirmada').length, 'por un analista', 'est', 'confirmada', 'k-red', 'con'],
+          ['Descartadas', AL.filter(a => a.estado === 'descartada').length, 'con historial', 'est', 'descartada', 'k-gray', 'des']];
+        $('rp-kpis').innerHTML = K.map(k => `<button type="button" class="rp-kpi ${k[5]}" data-k="${k[3]}" data-v="${k[4]}"><span class="kh"><span>${k[0]}</span><span class="ki"><svg class="mx-ico" viewBox="0 0 24 24">${KI[k[6]]}</svg></span></span><b>${k[1]}</b><small>${esc(k[2])}</small></button>`).join('');
         $('rp-kpis').querySelectorAll('[data-k]').forEach(b => b.addEventListener('click', () => filtrarDesdePanel(b.dataset.k, b.dataset.v)));
         const barras = (cont, filas, k, col) => { const mx = Math.max(1, ...filas.map(f => f[1]));
-          $(cont).innerHTML = filas.map(f => `<div class="rp-bar"><button type="button" data-v="${esc(f[2] ?? f[0])}">${esc(f[0])}</button><span class="b"><i style="width:${f[1] / mx * 100}%;background:${f[3] || col || 'var(--primary)'}"></i></span><b class="mx-mono">${f[1]}</b></div>`).join('') || '<div class="mx-empty">Sin datos.</div>';
+          $(cont).innerHTML = filas.map(f => `<div class="rp-bar"><button type="button" data-v="${esc(f[2] ?? f[0])}">${esc(f[0])}</button><span class="b"><i style="width:${Math.max(2, f[1] / mx * 100)}%;--bc:${f[3] || col || 'var(--primary)'}"></i></span><b class="mx-mono">${f[1]}</b></div>`).join('') || '<div class="mx-empty">Sin datos.</div>';
           $(cont).querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => filtrarDesdePanel(k, b.dataset.v))); };
-        barras('rp-prio', ['critica', 'alta', 'media', 'baja'].map(p => [PRI[p], vivas.filter(a => pri(a) === p).length, p, p === 'critica' || p === 'alta' ? 'var(--alta)' : p === 'media' ? 'var(--media)' : 'var(--line-2)']), 'pri');
+        { const PC = { critica: 'var(--lv-critico)', alta: 'var(--lv-elevado)', media: 'var(--media)', baja: 'var(--baja)' };
+          const D = ['critica', 'alta', 'media', 'baja'].map(p => [p, vivas.filter(a => pri(a) === p).length]), tot = D.reduce((s, d) => s + d[1], 0), R = 52, C = 2 * Math.PI * R;
+          let acc = 0;
+          const segs = tot ? D.filter(d => d[1]).map(([p, n]) => { const l = n / tot * C, g = D.filter(d => d[1]).length > 1 ? 2 : 0;
+            const el = `<circle class="seg" data-v="${p}" cx="70" cy="70" r="${R}" fill="none" stroke="${PC[p]}" stroke-width="16" stroke-dasharray="${Math.max(0, l - g)} ${C}" stroke-dashoffset="${-acc}" transform="rotate(-90 70 70)"><title>${PRI[p]}: ${n}</title></circle>`; acc += l; return el; }).join('') : '';
+          $('rp-prio').innerHTML = `<div class="rp-dona"><svg viewBox="0 0 140 140" role="img" aria-label="Alertas por prioridad"><circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--soft-2)" stroke-width="16"/>${segs}
+            <text x="70" y="72" text-anchor="middle" class="c-n">${tot}</text><text x="70" y="90" text-anchor="middle" class="c-t">alertas</text></svg>
+            <div class="rp-dleg">${D.map(([p, n]) => `<button type="button" data-v="${p}"><i style="background:${PC[p]}"></i><span>${PRI[p]}</span><b>${n}</b></button>`).join('')}</div></div>`;
+          $('rp-prio').querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => filtrarDesdePanel('pri', b.dataset.v))); }
         const cc = {}; vivas.forEach(a => { cc[a.categoria] = (cc[a.categoria] || 0) + 1; });
         $('rp-cat-n').textContent = `${vivas.length} alertas sin descartar`;
         barras('rp-cat', Object.entries(cc).sort((a, b) => b[1] - a[1]).map(([k, n]) => [catN(k), n, k]), 'cat');
         const fc = {}; AL.forEach(a => { const f = a.fuente || a.dominio || '—'; fc[f] = (fc[f] || 0) + 1; });
-        barras('rp-fte', Object.entries(fc).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => [k, n, k]), 'fte', 'var(--cds-chart-categorical-2, var(--primary))');
+        barras('rp-fte', Object.entries(fc).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => [k, n, k]), 'fte', 'var(--ok)');
         const e = ENT(), mc = {}, rx = t => new RegExp('(^|[^a-z0-9ñ])' + sinTilde(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9ñ])');
         [['Entidad', e.terminos || []], ['Producto o servicio', e.productos || []], ['Proveedor', e.proveedores || []], ['Dominio oficial', e.dominios || []]].forEach(([g, ts]) => ts.forEach(t => {
           const r = rx(t), n = AL.filter(a => r.test(sinTilde(`${a.titulo} ${a.resumen || ''} ${a.url || ''}`))).length; if (n) mc[`${t} · ${g}`] = [n, t]; }));
-        barras('rp-marcas', Object.entries(mc).sort((a, b) => b[1][0] - a[1][0]).slice(0, 10).map(([k, v]) => [k, v[0], v[1]]), 'q', 'var(--cds-chart-categorical-3, var(--primary))');
+        barras('rp-marcas', Object.entries(mc).sort((a, b) => b[1][0] - a[1][0]).slice(0, 10).map(([k, v]) => [k, v[0], v[1]]), 'q', 'var(--media)');
         const seg = AL.filter(a => a.estado === 'seguimiento' || (['nueva', 'en_verificacion'].includes(a.estado) && ['alta', 'critica'].includes(pri(a)))).sort((x, y) => PRK[pri(x)] - PRK[pri(y)]).slice(0, 8);
-        $('rp-seg').innerHTML = seg.map(a => `<div class="rp-bar" style="grid-template-columns:auto 1fr auto;cursor:pointer" data-id="${a.id}">${prB(a)}<span>${esc(a.titulo)}<div class="mx-small">${esc(a.fuente || '')} · ${esc(fLarga(fechaART(fpub(a))))}</div></span><span class="rp-st ${a.estado}">${EST[a.estado]}</span></div>`).join('') || '<div class="mx-empty">Nada pendiente de seguimiento.</div>';
+        $('rp-seg').innerHTML = seg.length ? `<div class="rp-items">${seg.map(a => `<div class="rp-item pc-${pri(a)}" data-id="${a.id}"><span class="t">${esc(a.titulo)}</span><span class="rp-st ${a.estado}">${EST[a.estado]}</span>
+            <span class="m">${prB(a)}${srcB(a)}<span>· ${esc(fLarga(fechaART(fpub(a))))}</span></span></div>`).join('')}</div>` : '<div class="mx-empty">Nada pendiente de seguimiento.</div>';
         $('rp-seg').querySelectorAll('[data-id]').forEach(x => x.addEventListener('click', () => ficha(x.dataset.id)));
         // evolución 60 días
         const dias = []; for (let i = 59; i >= 0; i--) dias.push(fechaART(new Date(Date.now() - i * 864e5).toISOString()));
         const pub = dias.map(d => AL.filter(a => fechaART(fpub(a)) === d).length), evs = dias.map(d => new Set(AL.filter(a => fechaART(fpub(a)) === d).map(gid)).size);
-        const mx = Math.max(1, ...pub), W = 600, H = 150, bw = W / dias.length, y = v => H - 18 - v / mx * (H - 30);
+        const top = Math.max(4, Math.ceil(Math.max(1, ...pub) / 4) * 4), W = 600, H = 190, bw = W / dias.length, y = v => H - 4 - v / top * (H - 14);
+        const lin = evs.map((v, i) => [(i + .5) * bw, y(v)]);
         $('rp-evol').className = 'rp-evol';
-        $('rp-evol').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Menciones por día">${pub.map((v, i) => v ? `<rect x="${i * bw + 1}" y="${y(v)}" width="${bw - 2}" height="${H - 18 - y(v)}" fill="var(--primary)" opacity=".35"><title>${fLarga(dias.at(i))}: ${v} publicaciones, ${evs.at(i)} acontecimientos</title></rect>` : '').join('')}
-          <path d="M${evs.map((v, i) => `${(i + .5) * bw},${y(v)}`).join(' L')}" fill="none" stroke="var(--alta)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
-          <text x="0" y="${H - 4}" font-size="10" fill="var(--mute)">${fCorta(dias.at(0))}</text><text x="${W}" y="${H - 4}" font-size="10" fill="var(--mute)" text-anchor="end">${fCorta(dias.at(-1))}</text><text x="2" y="12" font-size="10" fill="var(--mute)">máx. ${mx}</text></svg>`;
+        $('rp-evol').innerHTML = `<div style="display:grid;grid-template-columns:28px 1fr;gap:6px"><div style="display:flex;flex-direction:column;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--mute);text-align:right;height:200px;padding:4px 0 0">${[4, 3, 2, 1, 0].map(k => `<span>${top * k / 4}</span>`).join('')}</div>
+          <div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Menciones por día">
+          <defs><linearGradient id="rp-ar" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--alta)" stop-opacity=".22"/><stop offset="1" stop-color="var(--alta)" stop-opacity="0"/></linearGradient></defs>
+          ${[0, 1, 2, 3, 4].map(k => `<line class="gl" x1="0" x2="${W}" y1="${y(top * k / 4)}" y2="${y(top * k / 4)}"/>`).join('')}
+          ${pub.map((v, i) => v ? `<rect class="bar" x="${i * bw + 1.5}" y="${y(v)}" width="${bw - 3}" height="${H - 4 - y(v)}" rx="2"><title>${fLarga(dias.at(i))}: ${v} publicaciones, ${evs.at(i)} acontecimientos</title></rect>` : '').join('')}
+          <path d="M${lin[0][0]},${H - 4} L${lin.map(p => p.join(',')).join(' L')} L${lin.at(-1)[0]},${H - 4}Z" fill="url(#rp-ar)"/>
+          <path d="M${lin.map(p => p.join(',')).join(' L')}" fill="none" stroke="var(--alta)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>
+          <div class="rp-ejes"><span>${fCorta(dias.at(0))}</span><span>${fCorta(dias.at(30))}</span><span>hoy</span></div></div></div>`;
       }
       // ---------- ficha de una alerta ----------
       function ficha(id) {
@@ -1877,7 +1897,10 @@
             ${a.url ? `<div><a class="mx-btn primary" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">Abrir la publicación original ${ico('ext', 'width:15px;height:15px')}</a></div>` : ''}
             <div class="mx-g2">
               <div><div class="mx-eyebrow" style="margin-bottom:6px">Cómo se calculó la prioridad preliminar · ${a.puntaje ?? '—'} / 100</div>
-                ${a.puntaje != null ? `<div class="rp-fac"><span class="mx-small">Factor</span><span class="mx-small" style="text-align:right">Valor</span><span class="mx-small" style="text-align:right">Peso</span>${fac.map(f => `<span>${f[0]}</span><b>${f[1] != null ? Number(f[1]).toFixed(2).replace('.', ',') : '—'}</b><b>${Math.round(f[2] * 100)}%</b>`).join('')}</div>` : '<p class="mx-small">Alerta cargada a mano o importada: sin puntaje automático.</p>'}
+                ${a.puntaje != null ? (() => { const pc = { critica: 'var(--lv-critico)', alta: 'var(--lv-elevado)', media: 'var(--media)', baja: 'var(--baja)' }[a.prioridad], C = 2 * Math.PI * 38;
+                  return `<div class="rp-score"><svg viewBox="0 0 92 92"><circle cx="46" cy="46" r="38" fill="none" stroke="var(--soft-2)" stroke-width="8"/><circle cx="46" cy="46" r="38" fill="none" stroke="${pc}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${C * a.puntaje / 100} ${C}" transform="rotate(-90 46 46)"/>
+                    <text x="46" y="50" text-anchor="middle" style="font:700 22px var(--font);fill:var(--ink)">${a.puntaje}</text><text x="46" y="64" text-anchor="middle" style="font:600 9px var(--font);fill:var(--mute)">de 100</text></svg>
+                    <div style="flex:1;min-width:0">${fac.map(f => `<div class="rp-fbar"><span>${f[0]}</span><span class="b"><i style="width:${(f[1] || 0) * 100}%"></i></span><em>${Math.round(f[2] * 100)}%</em></div>`).join('')}</div></div>`; })() : '<p class="mx-small">Alerta cargada a mano o importada: sin puntaje automático.</p>'}
                 <p class="mx-small" style="margin-top:6px">Es una ayuda para ordenar la revisión, no una medición del riesgo real.</p></div>
               <div><div class="mx-eyebrow" style="margin-bottom:6px">Mismo acontecimiento · ${grp.length + 1} publicaciones de ${fuentesGrupo(a)} fuentes</div>
                 ${grp.length ? grp.map(x => `<div class="mx-small" style="margin-bottom:4px">${esc(fLarga(fechaART(fpub(x))))} · <b>${esc(x.fuente || x.dominio || '')}</b> · ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.titulo)}</a>` : esc(x.titulo)}</div>`).join('') : '<p class="mx-small">Sin otras publicaciones agrupadas.</p>'}
@@ -1958,7 +1981,7 @@
       });
       // ---------- ejecutar ----------
       const ejecutar = async (cuerpo, b) => {
-        const txt = b.textContent; b.disabled = true; b.textContent = 'Consultando fuentes…';
+        const sp = b.querySelector('span') || b, txt = sp.textContent; b.disabled = true; b.classList.add('girando'); sp.textContent = 'Consultando fuentes…';
         try {
           const r = await fetch(`${SB.url}/functions/v1/monitor-reputacion`, { method: 'POST', headers: { apikey: SB.anonKey, Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
           const j = await r.json().catch(() => ({}));
@@ -1966,11 +1989,18 @@
           await cargar(); pintarTodo();
           window.alert(j.omitido ? j.omitido : `Listo: ${j.consultas} consultas. ${(j.resultados || []).reduce((s, x) => s + x.nuevos, 0)} alertas nuevas. ${(j.resultados || []).filter(x => x.estado === 'error' || x.estado === 'limitado').length} con error o límite (ver "Fuentes y ejecuciones").`);
         } catch (err) { window.alert('No se pudo ejecutar: ' + err.message); }
-        b.disabled = false; b.textContent = txt;
+        b.disabled = false; b.classList.remove('girando'); sp.textContent = txt;
       };
       $('rp-run').addEventListener('click', () => ejecutar({ todas: true }, $('rp-run')));
       // ---------- fuentes y ejecuciones ----------
       function pintarFuentes() {
+        const act = CON.filter(c => c.activa), ult = c => RUNS.find(x => x.consulta_id === c.id), cuenta = e => act.filter(c => (ult(c) || {}).estado === e).length;
+        const nOk = cuenta('ok') + cuenta('sin_resultados'), nLim = cuenta('limitado') + cuenta('omitida'), nErr = cuenta('error');
+        $('rp-salud').innerHTML = `<i class="${nErr ? 'ro' : nLim ? 'am' : ''}"></i>Fuentes · ${nOk}/${act.length} respondieron${nLim ? ` · ${nLim} limitada${nLim > 1 ? 's' : ''}` : ''}${nErr ? ` · ${nErr} con error` : ''}`;
+        $('rp-salud-g').innerHTML = CON.map(c => { const r = ult(c);
+          return `<div class="rp-fc ${r ? 'fc-' + r.estado : ''}${c.activa ? '' : ' off'}"><div class="h"><b>${esc(c.nombre)}</b>${r ? `<span class="rp-run ${r.estado}">${RUN[r.estado]}</span>` : `<span class="rp-run sin_resultados">${c.activa ? 'Nunca' : 'Apagada'}</span>`}</div>
+            <div class="mx-small">${esc(ORG[c.fuente])} · cada ${c.cada_horas} h${r ? ` · ${esc(fHora(r.inicio))}` : ''}</div>
+            ${r ? `<div class="n"><span><b>${r.recuperados}</b> leídas</span><span><b>${r.relevantes}</b> relevantes</span><span><b>${r.nuevos}</b> nuevas</span></div>` : ''}</div>`; }).join('');
         $('rp-cons').innerHTML = CON.map(c => { const r = RUNS.find(x => x.consulta_id === c.id);
           return `<tr><td><b>${esc(c.nombre)}</b>${c.activa ? '' : ' <span class="mx-badge neutral">apagada</span>'}${c.nota ? `<div class="mx-small">${esc(c.nota)}</div>` : ''}</td><td class="nw">${esc(ORG[c.fuente])}</td><td class="nw">cada ${c.cada_horas} h</td>
             <td class="nw mx-mono">${r ? esc(fHora(r.inicio)) : '—'}</td><td class="nw">${r ? `<span class="rp-run ${r.estado}">${RUN[r.estado]}</span>` : '<span class="mx-small">nunca</span>'}</td>
