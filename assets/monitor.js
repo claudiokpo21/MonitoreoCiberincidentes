@@ -1770,16 +1770,32 @@
         const T = Object.entries(cnt).sort((a, b) => b[1] - a[1]), mx = Math.max(1, ...T.map(t => t[1]));
         $('ap-temas-n').textContent = `${plural(RP.length, 'opinión', 'opiniones')} · ${perTxt()}`;
         $('ap-temas').innerHTML = T.map(([k, n]) => `<div class="tm"><span>${esc(k)}</span><span class="b"><i style="width:${n / mx * 100}%;background:${k === 'General' ? 'var(--line-2)' : /Fraude|Token|Ingreso/.test(k) ? 'var(--alta)' : 'var(--media)'}"></i></span><b class="mx-mono">${n}</b></div>`).join('') || '<div class="mx-empty">Sin opiniones en el período.</div>';
-        // Evolución de la calificación (color de cada app; línea llena Android, punteada iOS)
-        const dias = [...new Set(L.map(x => fechaART(x.fecha)))].sort();
-        if (dias.length < 2) $('ap-evol').innerHTML = `<div class="mx-empty" style="padding:30px 10px">El gráfico se arma con las lecturas automáticas (cada 6 horas).${dias.length ? ' Ya hay datos de 1 día; desde mañana se ve la línea.' : ''}</div>`;
-        else $('ap-evol').innerHTML = '<div class="ap-graf">' + A.filter(a => !appSel || a.id === appSel).flatMap(a => TS.map(t => {
-          const pts = dias.map(d => { const l = L.filter(x => x.app_id === a.id && x.tienda === t && x.rating != null && fechaART(x.fecha) === d).slice(-1)[0]; return l ? +l.rating : null; });
-          const v = pts.filter(x => x != null); if (!v.length) return '';
-          const mn = Math.min(...v) - .2, mxx = Math.max(...v) + .2, W = 300, Hh = 34, x = i => i / (dias.length - 1) * W, y = r => Hh - (r - mn) / (mxx - mn) * Hh;
-          const dd = pts.map((r, i) => r == null ? null : `${x(i).toFixed(1)},${y(r).toFixed(1)}`).filter(Boolean).join(' L');
-          return `<span class="ap-app">${icono(a, true)}<span>${esc(a.nombre)} ${so(t)}</span></span><svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none"><path d="M${dd}" fill="none" stroke="${a.c}" stroke-width="2.2" ${t === 'ios' ? 'stroke-dasharray="5 4"' : ''} vector-effect="non-scaling-stroke"/></svg><b class="mx-mono" style="color:${col(v[v.length - 1])}">${num(v[v.length - 1])}</b>`;
-        })).join('') + '</div>';
+        // Evolución de la calificación: promedio semanal de estrellas de las opiniones recibidas (escala fija 1 a 5).
+        // La calificación de la tienda es un promedio histórico que casi no se mueve; se muestra al costado con su variación.
+        const lunesDe = f => { const d = new Date(f + 'T12:00:00Z'); return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 864e5).toISOString().slice(0, 10); };
+        const RS = R.filter(r => r.fecha && r.estrellas && enPer(r) && TS.includes(r.tienda) && (!appSel || r.app_id === appSel));
+        let sems = [...new Set(RS.map(r => lunesDe(fechaART(r.fecha))))].sort();
+        if (sems.length) { const t = []; for (let w = sems[0]; w <= sems.at(-1); w = new Date(new Date(w + 'T12:00:00Z').getTime() + 7 * 864e5).toISOString().slice(0, 10)) t.push(w); sems = t.slice(-26); }
+        const W = 300, Hh = 64, yv = r => 4 + (5 - r) / 4 * (Hh - 8), xw = i => sems.length < 2 ? W / 2 : 6 + i / (sems.length - 1) * (W - 12);
+        const filasEv = A.filter(a => !appSel || a.id === appSel).flatMap(a => TS.map(t => {
+          const L1 = RS.filter(r => r.app_id === a.id && r.tienda === t);
+          const lt = L.filter(x => x.app_id === a.id && x.tienda === t && x.rating != null), ltU = lt.slice(-1)[0], lt30 = hace(a.id, t, 30);
+          if (!L1.length && !ltU) return '';
+          const pts = sems.map(w => { const l = L1.filter(r => lunesDe(fechaART(r.fecha)) === w); return l.length ? { v: l.reduce((x, r) => x + r.estrellas, 0) / l.length, n: l.length, w } : null; });
+          let d = '', ant = false; pts.forEach((q, i) => { if (!q) { ant = false; return; } d += `${ant ? ' L' : ' M'}${xw(i).toFixed(1)},${yv(q.v).toFixed(1)}`; ant = true; });
+          const prom = L1.length ? L1.reduce((x, r) => x + r.estrellas, 0) / L1.length : null;
+          const dl = ltU && lt30 ? +ltU.rating - +lt30.rating : null;
+          const grid = [5, 3, 1].map(v => `<line x1="0" x2="${W}" y1="${yv(v)}" y2="${yv(v)}" stroke="var(--div)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join('');
+          const dots = pts.map((q, i) => q ? `<circle cx="${xw(i).toFixed(1)}" cy="${yv(q.v).toFixed(1)}" r="${Math.min(5.5, 2.2 + Math.sqrt(q.n))}" fill="${col(q.v)}" stroke="var(--panel)" stroke-width="1.2"><title>Semana del ${fLarga(q.w)}: ${num(q.v)} ★ promedio · ${plural(q.n, 'opinión', 'opiniones')}</title></circle>` : '').join('');
+          return `<span class="ap-app">${icono(a, true)}<span>${esc(a.nombre)} ${so(t)}</span></span>
+            <svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" style="height:${Hh}px;overflow:visible">${grid}${d ? `<path d="${d}" fill="none" stroke="${a.c}" stroke-width="2" ${t === 'ios' ? 'stroke-dasharray="5 4"' : ''} vector-effect="non-scaling-stroke" opacity=".85"/>` : ''}${dots}
+              ${!L1.length ? `<text x="${W / 2}" y="${Hh / 2 + 4}" text-anchor="middle" font-size="11" fill="var(--mute)">sin opiniones en el período</text>` : ''}</svg>
+            <span class="ap-ev-v"><b class="mx-mono" style="color:${prom != null ? col(prom) : 'var(--mute)'}">${prom != null ? num(prom) + ' ★' : '—'}</b><small>${plural(L1.length, 'opinión', 'opiniones')}</small>
+              ${ltU ? `<small title="Calificación histórica que muestra la tienda">tienda ${num(+ltU.rating)}${dl != null ? ` <span style="color:${dl > 0.04 ? 'var(--ok)' : dl < -0.04 ? 'var(--alta)' : 'var(--mute)'}">${dl > 0.04 ? '▲' : dl < -0.04 ? '▼' : '='}${Math.abs(dl) >= 0.05 ? ' ' + num(Math.abs(dl)) : ''}</span>` : ''}</small>` : ''}</span>`;
+        })).join('');
+        $('ap-evol').innerHTML = !RS.length && !filasEv ? '<div class="mx-empty" style="padding:30px 10px">Sin opiniones en el período.</div>'
+          : `<div class="ap-graf ap-ev">${filasEv}
+            <span></span><span class="ap-ev-x">${sems.length ? `<span>${esc(fCorta(sems[0]))}</span><span>semanas</span><span>${esc(fCorta(sems.at(-1)))}</span>` : ''}</span><span></span></div>`;
         // Opiniones del período
         const vis = RP.filter(r => !estr || (estr === 'r' ? !!r.respuesta : estr === '12' ? r.estrellas && r.estrellas <= 2 : estr === '45' ? r.estrellas >= 4 : r.estrellas === 3));
         ULT = { vis, RP, M, TS };

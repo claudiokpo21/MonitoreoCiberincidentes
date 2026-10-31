@@ -935,3 +935,11 @@ html[data-theme="dark"] .mx .mx-hero { background: radial-gradient(120% 140% at 
   .mx-cmd .mx-brand-t b { font-size: 14px; }
   .mx-cmd .mx-brand-ico { width: 32px; height: 32px; }
 }
+/* Apps · evolución semanal de estrellas */
+.mx .ap-ev { grid-template-columns: 190px 1fr 92px; row-gap: 10px; }
+.mx .ap-ev svg { height: 64px; }
+.mx .ap-ev-v { display: flex; flex-direction: column; align-items: flex-end; line-height: 15px; }
+.mx .ap-ev-v b { font-size: 13.5px; } .mx .ap-ev-v small { font-size: 11px; color: var(--mute); white-space: nowrap; }
+.mx .ap-ev-ej { display: none; }
+.mx .ap-ev-x { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--mute); }
+@media (max-width: 640px) { .mx .ap-ev { grid-template-columns: 1fr 80px; } .mx .ap-ev > svg { grid-column: 1 / -1; grid-row: auto; } .mx .ap-ev > span:empty { display: none; } }
