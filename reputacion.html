@@ -56,41 +56,48 @@
 <div class="mx mx-page" id="mx-page" data-vista="reputacion">
 <div class="mx-wrap mx-stack">
 
-  <section class="mx-card">
-    <div class="mx-card-h" style="margin-bottom:0">
-      <div>
-        <div class="mx-eyebrow">Reputación · OSINT sobre fuentes públicas</div>
-        <h1 class="mx-h2" style="margin-top:4px" id="rp-ent">Banco Provincia del Neuquén</h1>
-        <p class="mx-small" style="margin-top:4px">Señales de alerta temprana para investigar. La prioridad es <b>preliminar</b>: no es una medición del riesgo real ni una metodología regulatoria. Nada se confirma sin un analista.</p>
+  <section class="rp-hero">
+    <div class="rp-hero-top">
+      <div class="rp-hero-id">
+        <span class="rp-hero-ico"><svg class="mx-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/><path d="M12 3v3M21 12h-3"/></svg></span>
+        <div>
+          <div class="rp-hero-eb">Reputación · OSINT sobre fuentes públicas</div>
+          <h1 id="rp-ent">Banco Provincia del Neuquén</h1>
+          <p>Señales de alerta temprana para investigar. La prioridad es <b>preliminar</b>: no mide el riesgo real ni es una metodología regulatoria. Nada se confirma sin un analista.</p>
+        </div>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-        <span class="mx-chip-mono" id="rp-ult">Última recopilación · —</span>
-        <button type="button" class="mx-btn sm" id="rp-run">Ejecutar ahora</button>
-        <button type="button" class="mx-btn sm" id="rp-nueva">+ Alerta manual</button>
-        <button type="button" class="mx-btn sm" id="rp-csv"><svg class="mx-ico" viewBox="0 0 24 24" style="color:var(--ok)"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8l8 8M16 8l-8 8"/></svg>Exportar CSV</button>
+      <div class="rp-hero-acc">
+        <button type="button" class="rp-hbtn prim" id="rp-run"><svg class="mx-ico" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg><span>Ejecutar ahora</span></button>
+        <button type="button" class="rp-hbtn" id="rp-nueva"><svg class="mx-ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Alerta manual</span></button>
+        <button type="button" class="rp-hbtn" id="rp-csv"><svg class="mx-ico" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Exportar CSV</span></button>
       </div>
     </div>
-    <div class="mx-nm-tabs" id="rp-tabs" role="tablist" style="margin-top:14px">
-      <button type="button" class="on" data-tab="panel">Panel</button>
-      <button type="button" data-tab="alertas">Alertas <span id="rp-n-pend">0</span></button>
-      <button type="button" data-tab="fuentes">Fuentes y ejecuciones</button>
-      <button type="button" data-tab="config" id="rp-tab-config">Configuración</button>
+    <div class="rp-hero-st">
+      <span class="rp-pill"><i class="vivo"></i><span id="rp-ult">Última recopilación · —</span></span>
+      <span class="rp-pill" id="rp-salud">Fuentes · —</span>
+      <span class="rp-pill" id="rp-prox">Recopilación automática cada hora</span>
+    </div>
+    <div class="rp-tabs" id="rp-tabs" role="tablist">
+      <button type="button" class="on" data-tab="panel"><svg class="mx-ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Panel</button>
+      <button type="button" data-tab="alertas"><svg class="mx-ico" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>Alertas <span id="rp-n-pend">0</span></button>
+      <button type="button" data-tab="fuentes"><svg class="mx-ico" viewBox="0 0 24 24"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5"/></svg>Fuentes y ejecuciones</button>
+      <button type="button" data-tab="config" id="rp-tab-config"><svg class="mx-ico" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Configuración</button>
     </div>
   </section>
 
   <div data-panel="panel" class="mx-stack">
     <section class="rp-kpis" id="rp-kpis"></section>
-    <div class="mx-g2 mx-in-g">
-      <section class="mx-card"><div class="mx-card-h"><h2 class="mx-h3">Menciones por día</h2><span class="mx-small">últimos 60 días · barras: publicaciones · línea: acontecimientos distintos</span></div><div id="rp-evol"></div></section>
-      <section class="mx-card"><div class="mx-card-h"><h2 class="mx-h3">Prioridad preliminar</h2><span class="mx-small">alertas sin descartar</span></div><div id="rp-prio"></div></section>
+    <div class="rp-g21">
+      <section class="mx-card"><div class="mx-card-h"><div class="tit"><span class="mx-mark"></span><h2 class="mx-h3">Menciones por día</h2></div><span class="rp-ley"><i class="b"></i>publicaciones <i class="l"></i>acontecimientos distintos</span></div><div id="rp-evol"></div></section>
+      <section class="mx-card"><div class="mx-card-h"><div class="tit"><span class="mx-mark rojo"></span><h2 class="mx-h3">Prioridad preliminar</h2></div><span class="mx-small">sin descartar</span></div><div id="rp-prio"></div></section>
     </div>
     <div class="mx-g2 mx-in-g">
-      <section class="mx-card"><div class="mx-card-h"><h2 class="mx-h3">Por categoría</h2><span class="mx-small" id="rp-cat-n"></span></div><div id="rp-cat"></div></section>
-      <section class="mx-card"><div class="mx-card-h"><h2 class="mx-h3">Fuentes que más alertas originan</h2></div><div id="rp-fte"></div></section>
+      <section class="mx-card"><div class="mx-card-h"><div class="tit"><span class="mx-mark"></span><h2 class="mx-h3">Por categoría</h2></div><span class="mx-small" id="rp-cat-n"></span></div><div id="rp-cat"></div></section>
+      <section class="mx-card"><div class="mx-card-h"><div class="tit"><span class="mx-mark"></span><h2 class="mx-h3">Fuentes que más alertas originan</h2></div></div><div id="rp-fte"></div></section>
     </div>
     <div class="mx-g2 mx-in-g">
-      <section class="mx-card"><div class="mx-card-h"><h2 class="mx-h3">Entidad, marcas y servicios mencionados</h2></div><div id="rp-marcas"></div></section>
-      <section class="mx-card"><div class="mx-card-h"><h2 class="mx-h3">Requieren seguimiento</h2><span class="mx-small">en seguimiento, o alta y crítica sin verificar</span></div><div id="rp-seg"></div></section>
+      <section class="mx-card"><div class="mx-card-h"><div class="tit"><span class="mx-mark"></span><h2 class="mx-h3">Entidad, marcas y servicios mencionados</h2></div></div><div id="rp-marcas"></div></section>
+      <section class="mx-card"><div class="mx-card-h"><div class="tit"><span class="mx-mark"></span><h2 class="mx-h3">Requieren seguimiento</h2></div><span class="mx-small">seguimiento, o alta/crítica sin verificar</span></div><div id="rp-seg"></div></section>
     </div>
   </div>
 
@@ -111,13 +118,14 @@
       </div>
     </section>
     <section class="mx-card pad-0">
-      <div class="mx-card-h" style="padding:16px 20px 0"><h2 class="mx-h3">Alertas</h2><span class="mx-badge neutral" id="rp-al-n">—</span></div>
+      <div class="mx-card-h" style="padding:16px 20px 0"><div class="tit"><span class="mx-mark"></span><h2 class="mx-h3">Alertas</h2></div><span class="mx-badge neutral" id="rp-al-n">—</span></div>
       <div class="mx-tabla-w"><table class="mx-tabla"><thead><tr><th>Publicación</th><th>Prioridad prelim.</th><th>Alerta</th><th>Categoría</th><th>Naturaleza</th><th>Estado</th><th>Fuentes</th></tr></thead><tbody id="rp-al"><tr><td colspan="7" class="mx-empty">Cargando…</td></tr></tbody></table></div>
       <div class="mx-pag" id="rp-pag" style="padding:12px 20px"></div>
     </section>
   </div>
 
   <div data-panel="fuentes" class="mx-stack" hidden>
+    <section class="rp-salud" id="rp-salud-g"></section>
     <section class="mx-card pad-0">
       <div class="mx-card-h" style="padding:16px 20px 0"><h2 class="mx-h3">Estado de las consultas</h2><span class="mx-small">cada consulta muestra su última ejecución; un error o un límite nunca se muestra como "sin novedades"</span></div>
       <div class="mx-tabla-w"><table class="mx-tabla"><thead><tr><th>Consulta</th><th>Fuente</th><th>Frecuencia</th><th>Última ejecución</th><th>Resultado</th><th>Recup. / relev. / nuevas</th><th></th></tr></thead><tbody id="rp-cons"></tbody></table></div>
