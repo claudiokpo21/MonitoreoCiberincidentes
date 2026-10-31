@@ -56,7 +56,7 @@
 <div class="mx mx-page" id="mx-page" data-vista="servicios">
 <div class="mx-wrap mx-stack">
 
-  <section class="mx-card">
+  <section class="mx-card mx-hero">
     <div class="mx-card-h" style="margin-bottom:0">
       <div>
         <div class="mx-eyebrow">Servicios</div>
@@ -83,7 +83,15 @@
         <button type="button" class="mx-btn sm primary" id="sv-add">+ Agregar servicio</button></div>
     </div>
     <div class="mx-serv" id="sv-vivo"><div class="mx-empty">Cargando…</div></div>
-    <p class="mx-small" style="margin:12px 0 0">Verde: el sitio web del servicio responde desde tu conexión (se vuelve a verificar cada 5 minutos). Rojo: no respondió en 8 segundos. Indica si el sitio está accesible; no garantiza que funcionen el homebanking, las transferencias o la app.</p>
+    <p class="mx-small" style="margin:12px 0 0">Verde: el sitio web responde. Naranja: responde lento (más de 4 segundos). Rojo: no respondió. Lo verifica el servidor cada 5 minutos; "Verificar ahora" lo comprueba desde tu conexión. Indica si el sitio está accesible; no garantiza que funcionen el homebanking, las transferencias o la app.</p>
+  </section>
+
+  <section class="mx-card">
+    <div class="mx-card-h"><div class="tit"><span class="mx-mark"></span><h2 class="mx-h3">Disponibilidad de los últimos 30 días</h2></div>
+      <span class="rp-ley"><i style="background:var(--ok)"></i>en línea <i style="background:var(--media)"></i>lento o cortes breves <i style="background:var(--alta)"></i>sin respuesta <i style="background:var(--soft-2)"></i>sin datos</span></div>
+    <p class="mx-small" id="sv-up-t" style="margin:-6px 0 10px"></p>
+    <div class="sv-up" id="sv-up"><div class="mx-empty">Cargando…</div></div>
+    <p class="mx-small" style="margin:12px 0 0">El servidor abre el sitio web de cada servicio cada 5 minutos. El porcentaje es la proporción de verificaciones con respuesta. Mide la disponibilidad del sitio, no la de la app ni la de las transferencias.</p>
   </section>
 
   <section class="mx-kpis" id="sv-kpis"></section>
