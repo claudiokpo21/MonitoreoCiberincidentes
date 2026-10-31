@@ -45,6 +45,7 @@
       <a href="indicadores.html" data-vista="indicadores">Indicadores</a>
       <a href="servicios.html" data-vista="servicios">Servicios</a>
       <a href="apps.html" data-vista="apps">Apps</a>
+      <a href="reputacion.html" data-vista="reputacion">Reputación</a>
       <a href="normativa.html" data-vista="normativa">Normativa</a>
       <a href="metodologia.html" data-vista="metodologia">Metodología</a>
     </div>
@@ -59,12 +60,16 @@
       <div>
         <div class="mx-eyebrow">Apps del banco</div>
         <h1 class="mx-h2" style="margin-top:4px">Calificaciones y opiniones en Google Play y App Store</h1>
+        <p class="ap-print mx-small" id="ap-print-t"></p>
         <p class="mx-small" style="margin-top:4px">Se lee automáticamente cada 6 horas desde las tiendas de Argentina. Las opiniones se clasifican por tema con palabras clave.</p>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
         <span class="mx-chip-mono" id="ap-ult">Última lectura · —</span>
-        <div class="mx-chips" id="ap-tienda"><button type="button" class="mx-chipbtn on" data-t="">Ambas tiendas</button><button type="button" class="mx-chipbtn" data-t="play">Google Play</button><button type="button" class="mx-chipbtn" data-t="ios">App Store</button></div>
+        <select class="mx-select" id="ap-per" aria-label="Período" style="width:auto;min-width:190px"></select>
+        <div class="mx-chips" id="ap-tienda"><button type="button" class="mx-chipbtn on" data-t="">Android e iOS</button><button type="button" class="mx-chipbtn" data-t="play"><span class="so so-play">Android</span></button><button type="button" class="mx-chipbtn" data-t="ios"><span class="so so-ios">iOS</span></button></div>
         <button type="button" class="mx-btn sm" id="ap-act">Actualizar ahora</button>
+        <button type="button" class="mx-btn sm" id="ap-xls"><svg class="mx-ico" viewBox="0 0 24 24" style="color:var(--ok)"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8l8 8M16 8l-8 8"/></svg>Excel</button>
+        <button type="button" class="mx-btn sm" id="ap-imp"><svg class="mx-ico" viewBox="0 0 24 24" style="color:var(--alta)"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>Imprimir / PDF</button>
       </div>
     </div>
   </section>
@@ -73,6 +78,14 @@
 
   <section class="mx-apps" id="ap-cards"></section>
 
+  <section class="mx-card">
+    <div class="mx-card-h"><h2 class="mx-h3">Opiniones por mes</h2>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap" class="mx-small">
+        <span><i class="ap-sq" style="background:var(--alta)"></i>1–2 ★</span><span><i class="ap-sq" style="background:var(--media)"></i>3 ★</span><span><i class="ap-sq" style="background:var(--ok)"></i>4–5 ★</span>
+        <span class="ap-hint">· Hacé clic en un mes para verlo</span></div></div>
+    <div id="ap-meses"></div>
+  </section>
+
   <div class="mx-g2 mx-in-g">
     <section class="mx-card">
       <div class="mx-card-h"><h2 class="mx-h3">Temas en las opiniones</h2><span class="mx-mono" style="color:var(--mute)" id="ap-temas-n">—</span></div>
@@ -80,7 +93,7 @@
       <p class="mx-small" style="margin:10px 0 0">Últimos 90 días. Se clasifican por palabras clave: ingreso, usuario, contraseña, token, rostro, DNI, transferencia, caída, pago, fraude…</p>
     </section>
     <section class="mx-card">
-      <div class="mx-card-h"><h2 class="mx-h3">Evolución de la calificación</h2><span class="mx-mono" style="color:var(--mute)">promedio diario por tienda</span></div>
+      <div class="mx-card-h"><h2 class="mx-h3">Evolución de la calificación</h2><span class="mx-mono" style="color:var(--mute)">promedio diario · línea llena Android, punteada iOS</span></div>
       <div id="ap-evol"><div class="mx-empty">Cargando…</div></div>
     </section>
   </div>
@@ -91,6 +104,7 @@
         <div class="mx-chips" id="ap-est"><button type="button" class="mx-chipbtn on" data-e="">Todas</button><button type="button" class="mx-chipbtn" data-e="12">1–2 ★</button><button type="button" class="mx-chipbtn" data-e="3">3 ★</button><button type="button" class="mx-chipbtn" data-e="45">4–5 ★</button><button type="button" class="mx-chipbtn" data-e="r">Con respuesta del banco</button></div>
         <button type="button" class="mx-btn sm" id="ap-exp">Exportar CSV</button></div></div>
     <div class="mx-tabla-w"><table class="mx-tabla"><thead><tr><th>Fecha</th><th>App</th><th>Tienda</th><th>★</th><th>Tema</th><th>Opinión</th></tr></thead><tbody id="ap-rev"><tr><td colspan="6" class="mx-empty">Cargando…</td></tr></tbody></table></div>
+    <div class="mx-pag" id="ap-pag" style="padding:12px 20px"></div>
   </section>
 </div>
 </div>
