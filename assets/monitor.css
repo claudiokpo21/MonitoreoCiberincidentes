@@ -830,3 +830,108 @@ html[data-theme="dark"] .mx .so-play { color: #4ade80; background: rgba(74, 222,
 html[data-theme="dark"] .mx .rp-hero { background: radial-gradient(120% 140% at 100% 0%, rgba(90, 169, 236, .22) 0%, rgba(90, 169, 236, 0) 55%), linear-gradient(135deg, #0a1120 0%, #121d33 100%); border-color: #263041; }
 @media (max-width: 1023px) { .mx .rp-g21 { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .mx .rp-hero { padding: 18px 16px 0; } .mx .rp-hero h1 { font-size: 21px; line-height: 27px; } .mx .rp-hbtn span { display: none; } .mx .rp-kpis { grid-template-columns: 1fr 1fr; } }
+
+/* =====================================================================
+   Diseño unificado v2 · encabezado oscuro en todas las páginas
+   ===================================================================== */
+.mx .mx-hero { position: relative; overflow: hidden; border-radius: 16px !important; padding: 22px 24px !important; box-shadow: var(--sh-2); border: 1px solid rgba(255, 255, 255, .06) !important;
+  background: radial-gradient(120% 140% at 100% 0%, rgba(90, 169, 236, .28) 0%, rgba(90, 169, 236, 0) 55%), linear-gradient(135deg, #0b1730 0%, #13254a 100%) !important;
+  --ink: #ffffff; --ink-2: #c9d4ea; --mute: #a9b6d1; --panel: rgba(255, 255, 255, .07); --soft: rgba(255, 255, 255, .06); --soft-2: rgba(255, 255, 255, .1); --soft-3: rgba(255, 255, 255, .14);
+  --line: rgba(255, 255, 255, .12); --line-2: rgba(255, 255, 255, .2); --div: rgba(255, 255, 255, .1);
+  --primary: #7cbcf2; --primary-h: #9bcdf5; --primary-bg: rgba(147, 204, 255, .16); --primary-ink: #b9dcff; --navy-1: #5aa9ec; --navy-2: #7cbcf2;
+  --alta: #ff8a7d; --alta-bg: rgba(255, 84, 73, .18); --alta-bd: rgba(255, 138, 125, .35); --media: #ffb95f; --media-bg: rgba(255, 185, 95, .16); --media-bd: rgba(255, 185, 95, .35);
+  --ok: #4edea3; --ok-bg: rgba(78, 222, 163, .14); --ok-bd: rgba(78, 222, 163, .3); --baja: #c9d4ea; --baja-bg: rgba(255, 255, 255, .1);
+  color: var(--ink); }
+.mx .mx-hero::after { content: ""; position: absolute; right: -60px; top: -60px; width: 260px; height: 260px; border-radius: 50%; pointer-events: none;
+  border: 1px solid rgba(147, 204, 255, .14); box-shadow: 0 0 0 40px rgba(147, 204, 255, .035), 0 0 0 80px rgba(147, 204, 255, .025); }
+.mx .mx-hero > * { position: relative; z-index: 1; }
+.mx .mx-hero .mx-eyebrow, .mx .mx-hero .mx-eyebrow.azul { color: #93ccff !important; }
+.mx .mx-hero .mx-h1 { font-size: 26px; line-height: 32px; }
+.mx .mx-hero .mx-btn { background: rgba(255, 255, 255, .07); border-color: rgba(255, 255, 255, .16); color: #e6ecf8; }
+.mx .mx-hero .mx-btn:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+.mx .mx-hero .mx-btn.primary { background: #5aa9ec; border-color: #5aa9ec; color: #04121f; }
+.mx .mx-hero .mx-btn.primary:hover { background: #7cbcf2; }
+.mx .mx-hero .mx-btn.dark { background: rgba(0, 0, 0, .25); border-color: rgba(255, 255, 255, .16); color: #fff; }
+.mx .mx-hero .mx-chipbtn { background: rgba(255, 255, 255, .08); color: #c9d4ea; }
+.mx .mx-hero .mx-chipbtn.on { background: #5aa9ec; color: #04121f; }
+.mx .mx-hero .mx-chip-mono { background: rgba(0, 0, 0, .22); color: #c9d4ea; border: 1px solid rgba(255, 255, 255, .08); border-radius: 999px; padding: 3px 10px; }
+.mx .mx-hero .mx-select, .mx .mx-hero .mx-input { background-color: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .16); color: #fff; color-scheme: dark; }
+.mx .mx-hero .mx-select option { background: #13254a; color: #fff; }
+.mx .mx-hero .mx-badge.dark { background: rgba(147, 204, 255, .16); color: #b9dcff; }
+.mx .mx-hero .mx-schip { background: rgba(0, 0, 0, .22); box-shadow: none; border: 1px solid rgba(255, 255, 255, .08); }
+.mx .mx-hero .mx-schip .mx-ico { color: #93ccff; } .mx .mx-hero .mx-schip.rojo .mx-ico { color: #ff8a7d; }
+.mx .mx-hero.mx-session .tb { background: rgba(147, 204, 255, .14); color: #93ccff; border: 1px solid rgba(147, 204, 255, .25); }
+.mx .mx-hero .mx-kpi-ib { background: rgba(147, 204, 255, .14); }
+.mx .mx-hero .mx-meter .seg { height: 10px; }
+.mx .mx-hero .mx-meter .seg.on { box-shadow: 0 0 14px currentColor; }
+.mx .mx-hero .mx-meter .seg.on::before { background: #fff; color: #0b1730; }
+.mx .mx-hero .mx-tile { background: rgba(0, 0, 0, .22) !important; }
+.mx .mx-hero .mx-live { background: #4edea3; } .mx .mx-hero .mx-live::after { background: #4edea3; }
+.mx .mx-hero .ap-print { color: #a9b6d1; }
+.mx .mx-phead.mx-hero { align-items: center; }
+.mx .mx-session.mx-hero { margin-bottom: 20px; }
+html[data-theme="dark"] .mx .mx-hero { background: radial-gradient(120% 140% at 100% 0%, rgba(90, 169, 236, .22) 0%, rgba(90, 169, 236, 0) 55%), linear-gradient(135deg, #0a1120 0%, #121d33 100%) !important; border-color: #263041 !important; }
+@media (max-width: 640px) { .mx .mx-hero { padding: 18px 16px !important; } .mx .mx-hero .mx-h1 { font-size: 22px; line-height: 28px; } }
+@media print {
+  .mx .mx-hero, .mx .rp-hero { background: none !important; box-shadow: none; border: 1px solid #d5dbe5 !important; color: #0b1324;
+    --ink: #0b1324; --ink-2: #3a4659; --mute: #6b778a; --soft: #f7f9fc; --soft-2: #eceef2; --line: #e4e8ef; --primary: #2f6bd8; }
+  .mx .mx-hero::after, .mx .rp-hero::after { display: none; }
+  .mx .mx-hero .mx-eyebrow { color: #2f6bd8 !important; }
+}
+
+/* Indicadores con acento de color (todas las páginas) */
+.mx .mx-kpi { position: relative; overflow: hidden; transition: transform .15s, box-shadow .15s; --k: var(--primary); }
+.mx .mx-kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--k); }
+.mx .mx-kpi:hover { transform: translateY(-2px); }
+.mx .mx-kpi:has(.mx-kpi-ib.rojo) { --k: var(--alta); }
+.mx .mx-kpi:has(.mx-kpi-ib.azul) { --k: #5a90ff; }
+.mx .mx-kpi.k-ok { --k: var(--ok); } .mx .mx-kpi.k-amb { --k: var(--media); } .mx .mx-kpi.k-red { --k: var(--alta); }
+.mx .mx-kpi-ib { background: color-mix(in srgb, var(--k) 13%, transparent); color: var(--k); }
+
+/* Títulos de tarjetas con marca de color */
+.mx .mx-card > .mx-card-h > .mx-h3:first-child::before, .mx .mx-card > .mx-card-h > .mx-h2:first-child::before { content: ""; display: inline-block; width: 6px; height: 16px; border-radius: 3px; background: var(--primary); margin-right: 8px; vertical-align: -2px; }
+
+/* Tablas: franja de severidad a la izquierda */
+.mx .mx-tabla tr.pc-alta td:first-child, .mx .mx-tabla tr.pc-media td:first-child, .mx .mx-tabla tr.pc-baja td:first-child { border-left: 3px solid var(--pc); }
+
+/* Panorama · resumen de las últimas 24 horas */
+.mx .pv-res { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.mx .pv-mod { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; box-shadow: var(--sh-1); display: flex; flex-direction: column; gap: 8px; border-top: 3px solid var(--k); --k: var(--primary); min-width: 0; }
+.mx .pv-mod .h { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; color: var(--ink); }
+.mx .pv-mod .h .ki { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--k); background: color-mix(in srgb, var(--k) 13%, transparent); }
+.mx .pv-mod .h .ki .mx-ico { width: 15px; height: 15px; }
+.mx .pv-mod .h a { margin-left: auto; font-size: 12px; font-weight: 600; text-decoration: none; }
+.mx .pv-mod ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; line-height: 17px; color: var(--ink-2); }
+.mx .pv-mod li { display: flex; gap: 7px; align-items: baseline; } .mx .pv-mod li b { color: var(--ink); }
+.mx .pv-mod li i { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--c, var(--ok)); transform: translateY(-1px); }
+.mx .pv-mod li.ro { --c: var(--alta); } .mx .pv-mod li.am { --c: var(--media); } .mx .pv-mod li.gr { --c: var(--line-2); } .mx .pv-mod li.az { --c: var(--primary); }
+.mx .pv-mod .sk { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--soft-2), var(--soft), var(--soft-2)); background-size: 200% 100%; animation: pv-sk 1.2s infinite linear; }
+@keyframes pv-sk { to { background-position: -200% 0; } }
+@media (max-width: 1023px) { .mx .pv-res { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .mx .pv-res { grid-template-columns: 1fr; } }
+
+/* Servicios · semáforo e historial de 30 días */
+.mx .mx-srv.vivo { border-left: 4px solid var(--sc, var(--line-2)); }
+.mx .mx-srv.vivo.s-ok { --sc: var(--ok); } .mx .mx-srv.vivo.s-lento { --sc: var(--media); border-color: var(--media-bd); }
+.mx .mx-srv.vivo.s-caido { --sc: var(--alta); background: var(--alta-bg); border-color: var(--alta-bd); }
+.mx .mx-vivo.lento { color: var(--media); } .mx .mx-vivo.lento i { background: var(--media); }
+.mx .sv-up { display: flex; flex-direction: column; }
+.mx .sv-ur { display: grid; grid-template-columns: minmax(130px, 220px) 1fr 64px; gap: 12px; align-items: center; font-size: 13px; padding: 7px 0; border-top: 1px solid var(--div); }
+.mx .sv-ur:first-child { border-top: 0; }
+.mx .sv-ur b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx .sv-bar { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; }
+.mx .sv-bar i { height: 20px; border-radius: 2px; background: var(--soft-2); }
+.mx .sv-bar i.ok { background: var(--ok); opacity: .7; } .mx .sv-bar i.a { background: var(--media); } .mx .sv-bar i.r { background: var(--alta); }
+.mx .sv-bar i:hover { outline: 2px solid var(--ink); outline-offset: 1px; }
+.mx .sv-pct { font-family: var(--mono); font-weight: 700; text-align: right; font-size: 12.5px; }
+.mx .sv-ejes { display: grid; grid-template-columns: minmax(130px, 220px) 1fr 64px; gap: 12px; font-family: var(--mono); font-size: 10.5px; color: var(--mute); margin-top: 6px; }
+.mx .sv-ejes span:nth-child(2) { display: flex; justify-content: space-between; }
+@media (max-width: 640px) { .mx .sv-ur, .mx .sv-ejes { grid-template-columns: 1fr 52px; } .mx .sv-ur .sv-bar { grid-column: 1 / -1; grid-row: 2; } .mx .sv-ejes span:first-child { display: none; } }
+
+/* Encabezado del sitio en el celular */
+@media (max-width: 640px) {
+  .mx-cmd .mx-tema button span { display: none; }
+  .mx-cmd .mx-cmd-right { gap: 8px; }
+  .mx-cmd .mx-brand-t b { font-size: 14px; }
+  .mx-cmd .mx-brand-ico { width: 32px; height: 32px; }
+}

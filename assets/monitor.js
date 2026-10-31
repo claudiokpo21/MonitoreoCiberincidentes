@@ -515,12 +515,34 @@
   }
   const pintarVivo = (nombre) => {
     const v = VIVO[nombre] || { estado: 'cargando' };
-    const txt = v.estado === 'ok' ? `En línea · ${v.ms} ms` : v.estado === 'caido' ? 'Sin respuesta' : v.estado === 'sin' ? 'Sin sitio cargado' : 'Verificando…';
-    document.querySelectorAll(`[data-vivo="${CSS.escape(nombre)}"]`).forEach(el => { el.className = 'mx-vivo ' + v.estado; el.title = `Sitio web: ${txt}`; const s = el.querySelector('span'); if (s) s.textContent = txt; });
+    const txt = v.estado === 'ok' ? `En línea · ${v.ms} ms` : v.estado === 'lento' ? `Lento · ${v.ms} ms` : v.estado === 'caido' ? 'Sin respuesta' : v.estado === 'sin' ? 'Sin sitio cargado' : 'Verificando…';
+    document.querySelectorAll(`[data-vivo="${CSS.escape(nombre)}"]`).forEach(el => { el.className = 'mx-vivo ' + v.estado; el.title = `Sitio web: ${txt}${v.fecha ? ' · verificado ' + fHora(v.fecha) : ''}${v.error ? ' · ' + v.error : ''}`; const s = el.querySelector('span'); if (s) s.textContent = txt;
+      const card = el.closest('.mx-srv.vivo'); if (card) { card.classList.remove('s-ok', 's-lento', 's-caido'); if (['ok', 'lento', 'caido'].includes(v.estado)) card.classList.add('s-' + v.estado); } });
   };
   let vivoT = null, vivoUlt = null;
-  async function verificarTodos() {
-    const S = SERVICIOS.slice(); S.forEach(s => { if (!VIVO[s.nombre]) pintarVivo(s.nombre); });
+  // Estado guardado por la verificación automática del servidor (cada 5 minutos). Si no existe o está atrasado, se verifica desde el navegador.
+  async function vivoServidor() {
+    if (!usaSupabase || !SERV_TABLA) return null;
+    try {
+      const U = await sbFetch('monitor_servicios_ultimo?select=*');
+      const rec = (U || []).filter(u => Date.now() - new Date(u.fecha).getTime() < 12 * 60e3);
+      if (!rec.length) return null;
+      SERVICIOS.forEach(s => { const u = rec.find(x => x.servicio_id === s.id); VIVO[s.nombre] = u ? { estado: u.estado, ms: u.ms, fecha: u.fecha, error: u.error, srv: true } : { estado: s.web ? 'cargando' : 'sin' }; });
+      return new Date(Math.max(...rec.map(u => new Date(u.fecha).getTime())));
+    } catch (e) { return null; }
+  }
+  async function verificarTodos(forzar) {
+    const S = SERVICIOS.slice();
+    const fs = forzar === true ? null : await vivoServidor();
+    if (fs) {
+      S.forEach(s => pintarVivo(s.nombre));
+      document.querySelectorAll('[data-vivo-res]').forEach(el => {
+        const n = e => S.filter(s => (VIVO[s.nombre] || {}).estado === e).length, ok = n('ok'), le = n('lento'), ca = n('caido');
+        el.innerHTML = `<b style="color:var(--ok)">${ok} en línea</b>${le ? ` · <b style="color:var(--media)">${le} lentos</b>` : ''}${ca ? ` · <b style="color:var(--alta)">${ca} sin respuesta</b>` : ''} · verificado por el servidor ${fs.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`;
+      });
+      vivoUlt = fs; clearTimeout(vivoT); vivoT = setTimeout(verificarTodos, 5 * 60e3); return;
+    }
+    S.forEach(s => { if (!VIVO[s.nombre]) pintarVivo(s.nombre); });
     let i = 0; const trabajar = async () => { while (i < S.length) { const s = S[i++]; VIVO[s.nombre] = await verificarWeb(s.web); pintarVivo(s.nombre); } };
     await Promise.all([1, 2, 3, 4, 5, 6].map(trabajar));
     vivoUlt = new Date();
@@ -696,6 +718,70 @@
     cont.querySelectorAll('button[data-p]').forEach(x => x.addEventListener('click', () => { if (!x.disabled) ir(+x.dataset.p); }));
   }
 
+  // ---------- Panorama: resumen de las últimas 24 horas por módulo ----------
+  async function resumen24(N, C) {
+    const cont = $('mx-res'); if (!cont) return;
+    const ayer = fechaART(new Date(Date.now() - 864e5).toISOString()), hace7 = new Date(Date.now() - 7 * 864e5).toISOString(), h24 = Date.now() - 864e5;
+    const li = (c, t) => `<li class="${c}"><i></i><span>${t}</span></li>`, corto = (t, n) => esc(t.length > n ? t.slice(0, n - 1) + '…' : t);
+    const mod = (id, k, ic, tit, href, cuerpo) => `<div class="pv-mod" style="--k:${k}" id="${id}"><div class="h"><span class="ki">${ic}</span>${tit}<a href="${href}">Ver →</a></div><ul>${cuerpo}</ul></div>`;
+    const sk = '<li><span class="sk" style="width:90%"></span></li><li><span class="sk" style="width:70%"></span></li><li><span class="sk" style="width:80%"></span></li>';
+    const IC = { n: '<svg class="mx-ico" viewBox="0 0 24 24"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M8 9h5M8 13h5"/></svg>',
+      s: '<svg class="mx-ico" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>', a: '<svg class="mx-ico" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>',
+      r: '<svg class="mx-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg>' };
+    // Noticias (datos ya cargados)
+    const rec = N.filter(x => x.fecha >= ayer), alt = rec.filter(x => x.severidad === 'alta'), pend = C.filter(c => c.decision === 'pendiente').length, top = alt[0] || rec[0];
+    const nHtml = li(alt.length ? 'ro' : 'gr', `<b>${rec.length}</b> hechos de hoy y ayer${alt.length ? ` · <b>${alt.length}</b> de severidad alta` : ''}`)
+      + (top ? li(top.severidad === 'alta' ? 'ro' : top.severidad === 'media' ? 'am' : 'gr', corto(top.titulo, 80)) : '')
+      + li(pend ? 'am' : '', pend ? `<b>${pend}</b> candidatos esperan revisión` : 'Sin candidatos pendientes');
+    cont.innerHTML = mod('rs-n', 'var(--alta)', IC.n, 'Noticias', 'noticias.html', nHtml) + mod('rs-s', 'var(--ok)', IC.s, 'Servicios', 'servicios.html', sk)
+      + mod('rs-a', 'var(--primary)', IC.a, 'Apps', 'apps.html', sk) + mod('rs-r', '#7c5cd6', IC.r, 'Reputación', 'reputacion.html', sk);
+    const poner = (id, h) => { const el = $(id); if (el) el.querySelector('ul').innerHTML = h; };
+    const nd = t => li('gr', t);
+    // Servicios: estado del servidor o incidentes de la semana
+    (async () => {
+      const inc = incidentesServicios(N, C).filter(h => h.fecha >= ayer);
+      let h = '';
+      if (usaSupabase && SERV_TABLA) {
+        try {
+          const U = (await sbFetch('monitor_servicios_ultimo?select=*')).filter(u => Date.now() - new Date(u.fecha).getTime() < 12 * 60e3);
+          if (U.length) {
+            const nom = id => (SERVICIOS.find(s => s.id === id) || {}).nombre || '—', ca = U.filter(u => u.estado === 'caido'), le = U.filter(u => u.estado === 'lento');
+            h += li(ca.length ? 'am' : '', `<b>${U.length - ca.length} de ${U.length}</b> sitios en línea ahora`);
+            ca.slice(0, 2).forEach(u => { h += li('ro', `${esc(nom(u.servicio_id))} · sin respuesta`); });
+            if (!ca.length && le.length) h += li('am', `${le.length} con respuesta lenta`);
+          }
+        } catch (e) { /* sin historial */ }
+      }
+      h += inc.length ? inc.slice(0, 2).map(x => li(x.sev === 'alta' ? 'ro' : 'am', `${esc(x.servicios.join(', '))} · ${x.sev === 'alta' ? 'caída' : 'falla'} en noticias`)).join('') : li('', 'Sin incidentes en noticias (hoy y ayer)');
+      poner('rs-s', h);
+    })();
+    if (!usaSupabase) { poner('rs-a', nd('Requiere la base de Supabase.')); poner('rs-r', nd('Requiere la base de Supabase.')); return; }
+    // Apps
+    (async () => {
+      try {
+        const [R, L] = await Promise.all([sbFetch(`monitor_apps_resenas?select=estrellas,tema,fecha&fecha=gte.${hace7}&order=fecha.desc&limit=2000`), sbFetch('monitor_apps_lecturas?select=app_id,tienda,rating,fecha&rating=not.is.null&order=fecha.desc&limit=60')]);
+        const neg = R.filter(r => r.estrellas <= 2), r24 = R.filter(r => new Date(r.fecha).getTime() >= h24), tc = {};
+        neg.forEach(r => { tc[r.tema || 'General'] = (tc[r.tema || 'General'] || 0) + 1; });
+        const tt = Object.entries(tc).sort((a, b) => b[1] - a[1])[0], ult = {}; L.forEach(l => { const k = l.app_id + l.tienda; if (!ult[k]) ult[k] = +l.rating; });
+        const rs = Object.values(ult), prom = rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null;
+        poner('rs-a', li(r24.length ? 'az' : 'gr', `<b>${r24.length}</b> opiniones nuevas en 24 h`)
+          + li(neg.length ? 'ro' : '', `<b>${neg.length}</b> de 1–2 ★ en 7 días`) + (tt ? li('am', `Más reclamado: <b>${esc(tt[0])}</b> (${tt[1]})`) : '')
+          + (prom != null ? li(prom < 3 ? 'ro' : prom < 4 ? 'am' : '', `Calificación promedio <b>${prom.toFixed(1).replace('.', ',')} ★</b>`) : ''));
+      } catch (e) { poner('rs-a', nd('Sin acceso a los datos de las apps.')); }
+    })();
+    // Reputación
+    (async () => {
+      try {
+        const [A, X] = await Promise.all([sbFetch('monitor_rep_alertas?select=estado,detectado,prioridad,prioridad_analista&order=detectado.desc&limit=5000'), sbFetch('monitor_rep_corridas?select=estado,consulta_id,inicio&order=inicio.desc&limit=100')]);
+        const nue = A.filter(a => new Date(a.detectado).getTime() >= h24), pe = A.filter(a => ['nueva', 'en_verificacion'].includes(a.estado)),
+          hi = pe.filter(a => ['alta', 'critica'].includes(a.prioridad_analista || a.prioridad)), vis = new Set(), ul = X.filter(r => !vis.has(r.consulta_id) && vis.add(r.consulta_id)),
+          mal = ul.filter(r => ['error', 'limitado'].includes(r.estado)).length;
+        poner('rs-r', li(nue.length ? 'az' : 'gr', `<b>${nue.length}</b> menciones nuevas en 24 h`) + li(hi.length ? 'ro' : pe.length ? 'am' : '', `<b>${pe.length}</b> pendientes de verificación${hi.length ? ` · <b>${hi.length}</b> alta o crítica` : ''}`)
+          + (ul.length ? li(mal ? 'am' : '', `Fuentes: ${ul.length - mal}/${ul.length} respondieron`) : ''));
+      } catch (e) { poner('rs-r', nd('Sin acceso a los datos de reputación.')); }
+    })();
+  }
+
   // ---------- Vistas ----------
   const vistas = {
     async inicio() {
@@ -737,6 +823,8 @@
           <div class="mx-small" style="margin-top:6px">Últimos 7 días · línea: 14 días</div></div>`;
       }).join('');
 
+      resumen24(N, C).catch(err => console.error('[Monitor] Resumen:', err));
+
       // Lectura del día
       const lec = String(E.lecturaDelDia || '').trim();
       const m = lec.match(/^(.+?[.;])\s+(.+)$/s);
@@ -751,7 +839,7 @@
       // Argentina
       const nac = sem.filter(x => x.ambito === 'nacional').sort((a, c) => (RK[a.severidad] ?? 3) - (RK[c.severidad] ?? 3) || c.fecha.localeCompare(a.fecha)).slice(0, 8);
       $('mx-nac-n').textContent = plural(sem.filter(x => x.ambito === 'nacional').length, 'hecho') + ' en 7 días';
-      $('mx-nac').innerHTML = nac.map(x => `<tr><td class="nw">${sevBadge(x.severidad)}</td>
+      $('mx-nac').innerHTML = nac.map(x => `<tr class="pc-${esc(x.severidad)}"><td class="nw">${sevBadge(x.severidad)}</td>
         <td class="tit"><a href="#" data-ficha="${x._i}">${esc(x.titulo)}</a><div style="margin-top:4px"><span class="mx-chip-mono">${esc(x.fuente)}</span></div></td>
         <td style="min-width:110px;max-width:190px">${esc(x.entidad)}</td><td class="nw mx-mono">${esc(fCorta(x.fecha))}</td>
         <td class="r"><button type="button" class="mx-btn sm primary" data-ficha="${x._i}">Ficha</button></td></tr>`).join('')
@@ -1497,13 +1585,14 @@
         // Estado en vivo
         let gv = '';
         $('sv-vivo').innerHTML = S.map(s => { const cab = (s.grupo || 'Otros') !== gv ? `<div class="mx-serv-g">${esc(gv = s.grupo || 'Otros')}</div>` : '';
-          return cab + `<div class="mx-srv vivo"><div class="mx-srv-h"><b title="${esc(s.nombre)}">${esc(s.nombre)}</b>
+          return cab + `<div class="mx-srv vivo${VIVO[s.nombre] && ['ok', 'lento', 'caido'].includes(VIVO[s.nombre].estado) ? ' s-' + VIVO[s.nombre].estado : ''}"><div class="mx-srv-h"><b title="${esc(s.nombre)}">${esc(s.nombre)}</b>
             ${s.propio && edita ? `<span class="mx-srv-acc"><button type="button" class="mx-x" data-editar="${esc(s.nombre)}" title="Editar servicio" style="width:22px;height:22px;font-size:13px">✎</button><button type="button" class="mx-x" data-quitar="${esc(s.nombre)}" title="Quitar servicio" style="width:22px;height:22px">${ico('x', 'width:13px;height:13px')}</button></span>` : ''}</div>
             ${vivoHtml(s)}<div class="mx-small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.web ? esc(s.web.replace(/^https?:\/\//, '')) : '—'}</div></div>`; }).join('');
         Object.keys(VIVO).forEach(pintarVivo);
         const rehacer = () => { TODOS = incidentesServicios(N, C); pintarGrupos(); grupo = ''; pintar(); verificarTodos(); };
         $('sv-vivo').querySelectorAll('[data-quitar]').forEach(b => b.addEventListener('click', () => quitarServicio(b.dataset.quitar, rehacer)));
         $('sv-vivo').querySelectorAll('[data-editar]').forEach(b => b.addEventListener('click', () => abrirAltaServicio(rehacer, SERVICIOS.find(x => x.nombre === b.dataset.editar))));
+        pintarUptime(S);
         const I = TODOS.filter(h => h.fecha >= desde && h.servicios.some(n => nombres.has(n)));
         const ant = dias ? TODOS.filter(h => h.fecha < desde && h.fecha >= menos(desde, dias) && h.servicios.some(n => nombres.has(n))) : [];
         const porServ = n => I.filter(h => h.servicios.includes(n));
@@ -1557,13 +1646,33 @@
           I.map(h => [h.fecha, h.sev === 'alta' ? 'Caída' : 'Falla', h.servicios.join(', '), h.titulo, h.fuente || '', h.url || '']));
       }
       const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+      // Disponibilidad de los últimos 30 días (verificación automática del servidor)
+      let UP = null;
+      try { UP = usaSupabase && SERV_TABLA ? await sbRpc('monitor_servicios_dias', { p_dias: 30 }) : null; } catch (e) { UP = null; }
+      function pintarUptime(S) {
+        const cont = $('sv-up'); if (!cont) return;
+        if (!UP) { cont.innerHTML = '<div class="mx-empty">El historial se activa cuando se ejecuta en Supabase el script sql/2026-10-31_servicios_chequeos.sql. Desde ese momento el servidor verifica cada servicio cada 5 minutos.</div>'; $('sv-up-t').textContent = ''; return; }
+        const D = []; for (let k = 29; k >= 0; k--) D.push(menos(hoy, k));
+        const conDatos = new Set(UP.map(u => u.dia));
+        $('sv-up-t').textContent = conDatos.size ? `registrando desde ${fLarga([...conDatos].sort()[0])} · cada cuadrito es un día` : 'todavía sin verificaciones';
+        const filas = S.filter(s => s.web).map(s => {
+          const L = UP.filter(u => u.servicio_id === s.id), tot = L.reduce((a, u) => a + u.chequeos, 0), cai = L.reduce((a, u) => a + u.caidos, 0);
+          return { s, L, tot, p: tot ? (1 - cai / tot) * 100 : null };
+        });
+        cont.innerHTML = filas.map(f => `<div class="sv-ur"><b title="${esc(f.s.nombre)}">${esc(f.s.nombre)}</b><div class="sv-bar">${D.map(d => { const u = f.L.find(x => x.dia === d);
+            if (!u) return `<i title="${esc(fLarga(d))} · sin verificaciones"></i>`;
+            const c = u.caidos / u.chequeos > .1 ? 'r' : u.caidos || u.lentos > u.chequeos * .25 ? 'a' : 'ok';
+            return `<i class="${c}" title="${esc(f.s.nombre)} · ${esc(fLarga(d))}\n${u.chequeos} verificaciones · ${u.caidos} sin respuesta · ${u.lentos} lentas${u.ms_prom ? ` · ${u.ms_prom} ms promedio` : ''}"></i>`; }).join('')}</div>
+          <span class="sv-pct" style="color:${f.p == null ? 'var(--mute)' : f.p >= 99.5 ? 'var(--ok)' : f.p >= 97 ? 'var(--media)' : 'var(--alta)'}">${f.p == null ? '—' : (f.p >= 99.95 ? '100' : f.p.toFixed(1).replace('.', ',')) + '%'}</span></div>`).join('')
+          + `<div class="sv-ejes"><span></span><span><span>${esc(fCorta(D[0]))}</span><span>${esc(fCorta(D[15]))}</span><span>hoy</span></span><span></span></div>`;
+      }
       document.querySelectorAll('#sv-per .mx-chipbtn').forEach(b => {
         b.classList.toggle('on', +b.dataset.d === dias);
         b.addEventListener('click', () => { dias = +b.dataset.d; grabarLS('mx-sv-per', String(dias)); document.querySelectorAll('#sv-per .mx-chipbtn').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
       });
       $('sv-todos').addEventListener('click', () => { verTodos = !verTodos; pintar(); });
       $('sv-add').addEventListener('click', () => abrirAltaServicio(() => { TODOS = incidentesServicios(N, C); pintarGrupos(); grupo = ''; pintar(); verificarTodos(); }));
-      $('sv-verif').addEventListener('click', () => { Object.keys(VIVO).forEach(k => delete VIVO[k]); SERVICIOS.forEach(s => pintarVivo(s.nombre)); verificarTodos(); });
+      $('sv-verif').addEventListener('click', () => { Object.keys(VIVO).forEach(k => delete VIVO[k]); SERVICIOS.forEach(s => pintarVivo(s.nombre)); verificarTodos(true); });
       setTimeout(verificarTodos, 50);
       $('sv-grupo').addEventListener('click', ev => { const b = ev.target.closest('[data-g]'); if (!b) return; grupo = b.dataset.g;
         $('sv-grupo').querySelectorAll('.mx-chipbtn').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
